@@ -273,6 +273,51 @@ fn enable_windows_task_autostart() -> Result<(), String> {
 }
 
 #[cfg(windows)]
+fn disable_windows_autostart_entries() {
+    let _ = Command::new("reg")
+        .args([
+            "delete",
+            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+            "/v",
+            "GeeksPOS",
+            "/f",
+        ])
+        .status();
+    let _ = Command::new("schtasks")
+        .args(["/Delete", "/F", "/TN", "GeeksPOS_Autostart"])
+        .status();
+}
+
+#[cfg(not(windows))]
+fn disable_windows_autostart_entries() {}
+
+#[cfg(windows)]
+fn stop_all_backend_processes() {
+    let _ = Command::new("taskkill")
+        .args(["/F", "/IM", "geeks_pos_backend.exe", "/T"])
+        .status();
+    let _ = Command::new("taskkill")
+        .args(["/F", "/IM", "geeks_pos_backend-x86_64-pc-windows-msvc.exe", "/T"])
+        .status();
+    let _ = Command::new("taskkill")
+        .args(["/F", "/IM", "geeks_pos_backend-i686-pc-windows-msvc.exe", "/T"])
+        .status();
+}
+
+#[cfg(not(windows))]
+fn stop_all_backend_processes() {}
+
+#[cfg(windows)]
+fn kill_process_tree_by_pid(pid: u32) {
+    let _ = Command::new("taskkill")
+        .args(["/F", "/PID", &pid.to_string(), "/T"])
+        .status();
+}
+
+#[cfg(not(windows))]
+fn kill_process_tree_by_pid(_pid: u32) {}
+
+#[cfg(windows)]
 fn enable_prevent_sleep() {
     unsafe {
         let _ = SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED);
@@ -644,6 +689,9 @@ fn retry_backend_start(app: tauri::AppHandle, state: tauri::State<BackendState>)
 fn stop_backend(state: &BackendState) {
     if let Ok(mut lock) = state.child.lock() {
         if let Some(child) = lock.as_mut() {
+            let pid = child.id();
+            // Kill whole backend tree first (waitress/worker descendants), then fallback to std kill.
+            kill_process_tree_by_pid(pid);
             if let Ok(None) = child.try_wait() {
                 let _ = child.kill();
                 let _ = child.wait();
@@ -952,6 +1000,8 @@ fn main() {
     let app = tauri::Builder::default()
         .manage(state)
         .setup(|app| {
+            // Clean up stale backend sidecars from previous unclean exits before starting a fresh one.
+            stop_all_backend_processes();
             if let Err(e) = ensure_webview2_runtime() {
                 append_log_line("ERROR", &e);
                 if let Some(win) = app.get_window("main") {
@@ -979,14 +1029,8 @@ fn main() {
             } else if let Ok(mut g) = state.bootstrap_error.lock() {
                 *g = None;
             }
-            if let Err(e) = enable_windows_autostart() {
-                append_log_line("WARN", &format!("Autostart setup warning: {e}"));
-                eprintln!("Autostart setup warning: {e}");
-            }
-            if let Err(e) = enable_windows_task_autostart() {
-                append_log_line("WARN", &format!("Task autostart warning: {e}"));
-                eprintln!("Task autostart warning: {e}");
-            }
+            // Explicitly disable startup autorun/task entries (requested for POS stability).
+            disable_windows_autostart_entries();
             enable_prevent_sleep();
             spawn_notification_flush_loop(app.handle());
             if let Some(window) = app.get_window("main") {
@@ -1030,6 +1074,15 @@ fn main() {
             tauri::RunEvent::WindowEvent { label, event, .. } => {
                 if label == "main" {
                     match event {
+                        tauri::WindowEvent::CloseRequested { api, .. } => {
+                            api.prevent_close();
+                            let state = app_handle.state::<BackendState>();
+                            stop_backend(&state);
+                            stop_all_backend_processes();
+                            disable_prevent_sleep();
+                            append_log_line("INFO", "Main window close requested; backend processes stopped.");
+                            app_handle.exit(0);
+                        }
                         tauri::WindowEvent::Focused(false) => {
                             if std::env::var("GEEKS_POS_KIOSK_FOCUS_RECLAIM")
                                 .map(|v| v == "1")
@@ -1041,6 +1094,9 @@ fn main() {
                             }
                         }
                         tauri::WindowEvent::Destroyed => {
+                            let state = app_handle.state::<BackendState>();
+                            stop_backend(&state);
+                            stop_all_backend_processes();
                             disable_prevent_sleep();
                         }
                         _ => {}
@@ -1050,6 +1106,7 @@ fn main() {
             tauri::RunEvent::ExitRequested { .. } => {
                 let state = app_handle.state::<BackendState>();
                 stop_backend(&state);
+                stop_all_backend_processes();
                 disable_prevent_sleep();
                 append_log_line("INFO", "Application exit requested; backend stopped.");
             }

@@ -326,7 +326,7 @@ export type CompleteSaleResponse = {
 
 export async function completeSale(body: object, idempotencyKey: string): Promise<CompleteSaleResponse> {
   const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
-  const r = await fetch(`${API}/api/sales/complete/`, {
+  const requestInit: RequestInit = {
     method: 'POST',
     credentials: 'include',
     headers: {
@@ -335,12 +335,33 @@ export async function completeSale(body: object, idempotencyKey: string): Promis
       'Idempotency-Key': idempotencyKey,
     },
     body: JSON.stringify(body),
-  })
-  const j = await r.json().catch(() => ({}))
-  if (!r.ok) {
-    throw new AppError(j.code || 'SALE_FAILED', j.detail)
   }
-  return j as CompleteSaleResponse
+  const url = `${API}/api/sales/complete/`
+  let r: Response
+  try {
+    r = await fetch(url, requestInit)
+  } catch (e: unknown) {
+    const firstMsg = e instanceof Error ? e.message : String(e || 'Failed to fetch')
+    // Runtime API base can become stale if backend port changes; refresh and retry once.
+    const liveBase = await resolveLatestRuntimeApiBase()
+    if (liveBase) {
+      writeRuntimeApiBase(liveBase)
+      try {
+        r = await fetch(`${liveBase}/api/sales/complete/`, requestInit)
+      } catch (e2: unknown) {
+        const secondMsg = e2 instanceof Error ? e2.message : String(e2 || 'Failed to fetch')
+        void logApiError(
+          `FETCH_FAIL ${url} detail=${firstMsg}; retry_base=${liveBase} retry_detail=${secondMsg}`,
+        )
+        throw new AppError('API_ERROR', secondMsg)
+      }
+    } else {
+      void logApiError(`FETCH_FAIL ${url} detail=${firstMsg}; retry_skipped=no_live_base`)
+      throw new AppError('API_ERROR', firstMsg)
+    }
+  }
+  if (!r.ok) throw await parseErrorResponse(r, 'SALE_FAILED')
+  return (await r.json()) as CompleteSaleResponse
 }
 
 export async function fetchReceiptEscpos(saleId: string): Promise<string | null> {

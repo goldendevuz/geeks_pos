@@ -5,26 +5,30 @@ export function ActionToast({
   kind,
   message,
   durationMs = 4000,
+  muteSound = false,
   onClose,
 }: {
   kind: 'ok' | 'err' | 'info'
   message: string
   durationMs?: number
+  muteSound?: boolean
   onClose?: () => void
 }) {
   const [visible, setVisible] = useState(true)
 
   useEffect(() => {
     setVisible(true)
-    if (kind === 'ok') playUiSound('success')
-    else if (kind === 'err') playUiSound('error')
-    else playUiSound('info')
+    if (!muteSound) {
+      if (kind === 'ok') playUiSound('success')
+      else if (kind === 'err') playUiSound('error')
+      else playUiSound('info')
+    }
     const timer = window.setTimeout(() => {
       setVisible(false)
       onClose?.()
     }, durationMs)
     return () => window.clearTimeout(timer)
-  }, [durationMs, kind, message, onClose])
+  }, [durationMs, kind, message, muteSound, onClose])
 
   if (!visible) return null
 

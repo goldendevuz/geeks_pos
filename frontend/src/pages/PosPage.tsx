@@ -144,7 +144,7 @@ export function PosPage({
   const idempotencyGenRef = useRef(0)
   const lastScanRef = useRef<{ code: string; at: number } | null>(null)
   const [buffer, setBuffer] = useState('')
-  const [toast, setToast] = useState<{ kind: 'err' | 'ok'; msg: string } | null>(null)
+  const [toast, setToast] = useState<{ kind: 'err' | 'ok'; msg: string; muteSound?: boolean } | null>(null)
   const [banner, setBanner] = useState<string | null>(null)
   const [scanFlash, setScanFlash] = useState(false)
   const [cartFlash, setCartFlash] = useState(false)
@@ -456,8 +456,8 @@ export function PosPage({
     setPaymentRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)))
   }
 
-  function showToast(kind: 'err' | 'ok', msg: string) {
-    setToast({ kind, msg })
+  function showToast(kind: 'err' | 'ok', msg: string, opts?: { muteSound?: boolean }) {
+    setToast({ kind, msg, muteSound: opts?.muteSound })
   }
 
   function resetCheckoutState() {
@@ -500,9 +500,9 @@ export function PosPage({
         receipt_printer_port: receiptPrinterPort || '',
       })
       if (result.kind === 'escpos') {
-        showToast('ok', t('msg.printSentTo', { printer: result.printer }))
+        showToast('ok', t('msg.printSentTo', { printer: result.printer }), { muteSound: true })
       } else {
-        showToast('ok', t('msg.printSentPlain'))
+        showToast('ok', t('msg.printSentPlain'), { muteSound: true })
       }
     } catch (e: unknown) {
       const rawMessage = e instanceof Error ? e.message : String(e || '')
@@ -511,7 +511,7 @@ export function PosPage({
       } else {
         setPrintBanner(t('msg.printFailed'))
       }
-      showToast('err', rawMessage || t('msg.printFailed'))
+      showToast('err', rawMessage || t('msg.printFailed'), { muteSound: true })
     }
     safeRefocus()
   }
@@ -651,7 +651,9 @@ export function PosPage({
       const code = appErr?.code || (e as Error & { code?: string }).code
       const detail = appErr?.detail || (e as Error & { detail?: string }).detail || ''
       const fallback = detail || (e instanceof Error ? e.message : '') || t('msg.errorGeneric')
-      const msg = t(`err.${code || 'UNKNOWN'}`, { defaultValue: fallback })
+      const baseMsg = t(`err.${code || 'API_ERROR'}`, { defaultValue: fallback })
+      const msg =
+        code === 'API_ERROR' && detail && detail !== 'API_ERROR' ? `${baseMsg}: ${detail}` : baseMsg
       if (code === 'INSUFFICIENT_STOCK') {
         setBanner(`${t('msg.stock')} ${msg}`)
       } else {
@@ -963,7 +965,14 @@ export function PosPage({
         )}
       </section>
 
-      {toast && <ActionToast kind={toast.kind} message={toast.msg} onClose={() => setToast(null)} />}
+      {toast && (
+        <ActionToast
+          kind={toast.kind}
+          message={toast.msg}
+          muteSound={toast.muteSound}
+          onClose={() => setToast(null)}
+        />
+      )}
       {banner && (
         <div className="mx-4 mt-2 px-3 py-2 rounded text-sm bg-red-950 border border-red-800 text-red-100">
           {banner}

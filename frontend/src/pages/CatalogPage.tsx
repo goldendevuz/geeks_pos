@@ -975,7 +975,7 @@ export function CatalogPage({
 
       {quickAdjust && (
         <div
-          className="absolute inset-0 z-20 bg-black/60 flex items-center justify-center p-4"
+          className="fixed inset-0 z-20 bg-black/60 flex items-center justify-center overflow-y-auto overscroll-contain p-4"
           role="dialog"
           aria-modal="true"
           onClick={() => setQuickAdjust(null)}
@@ -1041,7 +1041,7 @@ export function CatalogPage({
 
       {queueOpen && (
         <div
-          className="absolute inset-0 z-20 bg-black/60 flex items-center justify-center p-4"
+          className="fixed inset-0 z-20 bg-black/60 flex items-center justify-center overflow-y-auto overscroll-contain p-4"
           role="dialog"
           aria-modal="true"
           onClick={() => setQueueOpen(false)}
@@ -1148,7 +1148,7 @@ export function CatalogPage({
 
       {editing && (
         <div
-          className="absolute inset-0 z-20 bg-black/60 flex items-center justify-center p-4"
+          className="fixed inset-0 z-20 bg-black/60 flex items-center justify-center overflow-y-auto overscroll-contain p-4"
           role="dialog"
           aria-modal="true"
           onClick={() => setEditing(null)}
@@ -1210,7 +1210,7 @@ export function CatalogPage({
       )}
       {numpadOpen && (
         <div
-          className="absolute inset-0 z-30 flex items-center justify-center overflow-y-auto overscroll-contain bg-black/60 p-4"
+          className="fixed inset-0 z-30 flex items-center justify-center overflow-y-auto overscroll-contain bg-black/60 p-4"
           role="dialog"
           aria-modal="true"
           onClick={() => setNumpadOpen(null)}

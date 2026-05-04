@@ -148,7 +148,7 @@ class TsplRenderer:
             f"{variant.size.label_uz} / {variant.color.label_uz}".strip(),
             max_len=36,
         )
-        price = _tspl_literal(f"{self._money(variant.list_price)} UZS", max_len=22)
+        price = _tspl_literal(f"{self._money(variant.list_price)} SUM", max_len=22)
 
         w_mm, h_mm = _tspl_dimensions_mm(size_key)
         lay = _tspl_layout_centered(w_mm=w_mm, h_mm=h_mm, barcode=barcode)
