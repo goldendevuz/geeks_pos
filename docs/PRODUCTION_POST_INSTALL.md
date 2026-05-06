@@ -81,3 +81,50 @@ Backend asosan **127.0.0.1** da ishlaydi; firewall qoidasi qat’iy korporativ s
 6. **Firewall** (ixtiyoriy): o‘rnatishdan keyin `resources\add-firewall-rule-admin.bat` (Run as administrator) yoki `resources\add-firewall-rule.ps1` ni admin PowerShelldan ishga tushiring.
 7. **Kiosk vs windowed**: use default windowed 1366×768, or set `GEEKS_POS_KIOSK=1` on the shortcut for fullscreen kiosk.
 8. **Backup**: schedule or document `python scripts/backup_sqlite.py` for `%APPDATA%\GeeksPOS\db.sqlite3`.
+
+## Runtime .env standard (production)
+
+Primary runtime location:
+
+- `%APPDATA%\GeeksPOS\.env`
+
+Minimal required keys for activation:
+
+```env
+LICENSE_API_BASE_URL=https://your-license-host.example
+LICENSE_AUTH_TOKEN=your_token
+LICENSE_CLIENT_API_KEY=your_client_key
+```
+
+Also accepted (fallback names): `LICENSE_SERVER_URL`, `LICENSE_URL`, `LICENSE_TOKEN`, `LICENSE_API_TOKEN`, `LICENSE_CLIENT_KEY`, `CLIENT_API_KEY`.
+
+### Activation troubleshooting (operator)
+
+1. Close app completely.
+2. Ensure no stale backend process:
+   - `taskkill /F /IM "geeks_pos_backend.exe" /T`
+3. Verify `%APPDATA%\GeeksPOS\.env` exists and contains non-empty license keys above.
+4. Start app and retry activation.
+5. If still failing, check `%APPDATA%\GeeksPOS\logs\backend.log` for `LICENSE_API_BASE_URL` / upstream errors.
+
+## Release gate (must pass before shipping installer)
+
+### Technical gate
+
+From repo root:
+
+```powershell
+npm run build --prefix frontend
+python -m py_compile backend/config/settings.py backend/printing/receipt.py backend/printing/views.py backend/sales/views.py
+cargo check --manifest-path src-tauri/Cargo.toml
+powershell -ExecutionPolicy Bypass -File .\backend\scripts\build_sidecar.ps1
+```
+
+### Business smoke gate
+
+- Cashier: complete sale from POS.
+- Cashier/Admin: sale appears in sales history (cashier default today, date filters work with from/to).
+- Receipt print: toast reports queue submission and physical print works.
+- Label print: still works after receipt print.
+- Activation: success with runtime `.env`.
+- Restart app 2-3 times: only one backend sidecar process remains running.

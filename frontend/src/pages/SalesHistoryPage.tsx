@@ -17,6 +17,7 @@ export function SalesHistoryPage({
   onReprint,
   canVoid,
   canExport = true,
+  isCashier = false,
 }: {
   sales: SaleHistoryRow[]
   count: number
@@ -28,6 +29,7 @@ export function SalesHistoryPage({
   onReprint: (saleId: string) => Promise<void>
   canVoid: boolean
   canExport?: boolean
+  isCashier?: boolean
 }) {
   const { t } = useTranslation()
   const [from, setFrom] = useState('')
@@ -103,6 +105,11 @@ export function SalesHistoryPage({
         </button>
       </div>
       <p className="text-xs text-slate-400">{t('admin.sales.hint')}</p>
+      {isCashier && !from && !to && (
+        <p className="text-xs text-amber-400">
+          {t('admin.sales.cashierDefaultToday', { defaultValue: "Cashier uchun sukut bo'yicha bugungi sotuvlar ko'rsatiladi." })}
+        </p>
+      )}
       <div className="rounded border border-slate-700 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-900 text-slate-400">

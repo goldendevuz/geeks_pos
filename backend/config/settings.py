@@ -132,6 +132,13 @@ TEMPLATES = [
 
 APP_HOME_DIR = _resolve_writable_app_home()
 APPDATA_ROOT = APP_HOME_DIR.parent
+
+# Packaged Windows runtime commonly stores runtime env in %APPDATA%\GeeksPOS\.env.
+# Load it after APP_HOME_DIR is resolved so licensing/backup envs are available.
+try:
+    load_dotenv(APP_HOME_DIR / ".env", override=False)
+except OSError:
+    pass
 db_override = os.environ.get("GEEKS_POS_DB_PATH", "").strip()
 allow_db_override = os.environ.get("GEEKS_POS_ALLOW_DB_OVERRIDE", "1" if DEBUG else "0") == "1"
 if db_override and allow_db_override:
@@ -211,9 +218,24 @@ CORS_ALLOW_HEADERS = (*default_headers, "authorization", "idempotency-key", "x-c
 # POS uses (under this base): POST api/v1/verify-activation-key/, POST api/v1/activate/, GET api/v1/check-status/,
 # POST api/v1/sync-report/. Token + X-CLIENT-KEY on every call (see licensing.remote_client).
 # Packaged sidecar: run_waitress sets DJANGO_DEBUG=0 when frozen; Tauri also passes DJANGO_DEBUG=0 in release.
-LICENSE_API_BASE_URL = os.environ.get("LICENSE_API_BASE_URL", "").strip()
-LICENSE_AUTH_TOKEN = os.environ.get("LICENSE_AUTH_TOKEN", "").strip()
-LICENSE_CLIENT_API_KEY = os.environ.get("LICENSE_CLIENT_API_KEY", "").strip()
+LICENSE_API_BASE_URL = (
+    os.environ.get("LICENSE_API_BASE_URL")
+    or os.environ.get("LICENSE_SERVER_URL")
+    or os.environ.get("LICENSE_URL")
+    or ""
+).strip()
+LICENSE_AUTH_TOKEN = (
+    os.environ.get("LICENSE_AUTH_TOKEN")
+    or os.environ.get("LICENSE_TOKEN")
+    or os.environ.get("LICENSE_API_TOKEN")
+    or ""
+).strip()
+LICENSE_CLIENT_API_KEY = (
+    os.environ.get("LICENSE_CLIENT_API_KEY")
+    or os.environ.get("LICENSE_CLIENT_KEY")
+    or os.environ.get("CLIENT_API_KEY")
+    or ""
+).strip()
 LICENSE_ENFORCEMENT = os.environ.get("LICENSE_ENFORCEMENT", "0" if DEBUG else "1") == "1"
 LICENSE_OFFLINE_GRACE_HOURS = int(os.environ.get("LICENSE_OFFLINE_GRACE_HOURS", "72"))
 LICENSE_DEMO_DAYS = int(os.environ.get("LICENSE_DEMO_DAYS", "14"))

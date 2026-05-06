@@ -393,12 +393,7 @@ export default function App() {
       <Routes>
         <Route
           path="/pos"
-          element={
-            <PosPage
-              footerLangStrip
-              onLogout={resetLocalSession}
-            />
-          }
+          element={<Navigate to="/admin/pos" replace />}
         />
         <Route
           path="/admin/*"
@@ -784,6 +779,7 @@ function AdminPanel(props: {
                 onReprint={props.onReprintSale}
                 canVoid={!isCashier}
                 canExport={!isCashier}
+                isCashier={isCashier}
               />
             }
           />

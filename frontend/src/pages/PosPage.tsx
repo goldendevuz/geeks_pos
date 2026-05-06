@@ -47,41 +47,11 @@ function parseSom(v: string): Decimal {
 }
 
 function beepError() {
-  try {
-    const ctx = new AudioContext()
-    const o = ctx.createOscillator()
-    const g = ctx.createGain()
-    o.connect(g)
-    g.connect(ctx.destination)
-    o.frequency.value = 220
-    g.gain.value = 0.08
-    o.start()
-    setTimeout(() => {
-      o.stop()
-      ctx.close()
-    }, 120)
-  } catch {
-    // ignore
-  }
+  // POS sound effects are disabled globally by request.
 }
 
 function beepOk() {
-  try {
-    const ctx = new AudioContext()
-    const o = ctx.createOscillator()
-    const g = ctx.createGain()
-    o.connect(g)
-    g.connect(ctx.destination)
-    o.frequency.value = 880
-    g.gain.value = 0.04
-    o.start()
-    setTimeout(() => {
-      o.stop()
-      ctx.close()
-    }, 80)
-  } catch {
-    // ignore
-  }
+  // POS sound effects are disabled globally by request.
 }
 
 function normalizeScannerToken(token: string): string {
@@ -500,9 +470,20 @@ export function PosPage({
         receipt_printer_port: receiptPrinterPort || '',
       })
       if (result.kind === 'escpos') {
-        showToast('ok', t('msg.printSentTo', { printer: result.printer }), { muteSound: true })
+        showToast(
+          'ok',
+          t('msg.printQueuedTo', {
+            printer: result.printer,
+            defaultValue: `Chek navbatga yuborildi: ${result.printer}`,
+          }),
+          { muteSound: true },
+        )
       } else {
-        showToast('ok', t('msg.printSentPlain'), { muteSound: true })
+        showToast(
+          'ok',
+          t('msg.printQueuedPlain', { defaultValue: 'Chek matn rejimida navbatga yuborildi.' }),
+          { muteSound: true },
+        )
       }
     } catch (e: unknown) {
       const rawMessage = e instanceof Error ? e.message : String(e || '')
@@ -1194,7 +1175,7 @@ export function PosPage({
           </div>
         </section>
 
-        <aside className="w-full md:w-96 flex flex-col gap-3">
+        <aside className="w-full md:w-96 md:self-start flex flex-col gap-3">
           <div className="rounded border border-slate-800 p-3 bg-slate-900">
             <div className="flex items-center justify-between mb-2">
               <div className="text-sm text-slate-400">{t('pay.split')}</div>
@@ -1331,7 +1312,7 @@ export function PosPage({
             </div>
           )}
 
-          <div className="rounded-xl border border-slate-800 p-4 bg-slate-900">
+          <div className="sticky bottom-2 md:bottom-4 z-20 rounded-xl border border-slate-700 p-4 bg-slate-900/95 backdrop-blur supports-[backdrop-filter]:bg-slate-900/85 shadow-xl">
             <div className="text-slate-400 text-sm">{t('summary.total')}</div>
             <div className="text-3xl font-bold mt-1">{formatMoney(grand)}</div>
             <button

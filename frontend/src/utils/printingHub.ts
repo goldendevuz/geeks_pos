@@ -56,7 +56,12 @@ export async function dispatchPrint({ payloadBase64, kind, settings }: DispatchO
   // soft path when a name is set in store settings (still try that queue).
   if (printers.length === 0) {
     if (configured) {
-      await printRawBase64(payloadBase64, configured)
+      try {
+        await printRawBase64(payloadBase64, configured)
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err || '')
+        throw new Error(`Printer navbatiga yuborilmadi (${configured}): ${detail}`)
+      }
       return configured
     }
     const what = kind === 'receipt' ? 'chek' : 'yorliq'
@@ -82,7 +87,12 @@ export async function dispatchPrint({ payloadBase64, kind, settings }: DispatchO
     throw new Error(`Printer ulanmagan: ${missing}`)
   }
 
-  await printRawBase64(payloadBase64, chosen)
+  try {
+    await printRawBase64(payloadBase64, chosen)
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err || '')
+    throw new Error(`Printer navbatiga yuborilmadi (${chosen}): ${detail}`)
+  }
   return chosen
 }
 

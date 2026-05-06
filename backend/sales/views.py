@@ -153,15 +153,18 @@ class SaleHistoryView(generics.ListAPIView):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        if not _is_admin_or_owner(self.request.user):
-            today = timezone.localdate()
-            start_dt = timezone.make_aware(
-                datetime.combine(today, time.min), timezone.get_current_timezone()
-            )
-            qs = qs.filter(cashier=self.request.user, completed_at__gte=start_dt, completed_at__lt=start_dt + timedelta(days=1))
         from_date = self.request.query_params.get("from")
         to_date = self.request.query_params.get("to")
         query = (self.request.query_params.get("q") or "").strip()
+        if not _is_admin_or_owner(self.request.user):
+            qs = qs.filter(cashier=self.request.user)
+            # Default cashier view stays "today", but explicit from/to should override this default scope.
+            if not from_date and not to_date:
+                today = timezone.localdate()
+                start_dt = timezone.make_aware(
+                    datetime.combine(today, time.min), timezone.get_current_timezone()
+                )
+                qs = qs.filter(completed_at__gte=start_dt, completed_at__lt=start_dt + timedelta(days=1))
         if from_date:
             start_dt = _date_start(from_date)
             if start_dt is not None:

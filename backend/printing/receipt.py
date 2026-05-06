@@ -1,7 +1,10 @@
 ﻿import re
+import logging
 from decimal import Decimal, ROUND_HALF_UP
 
 from .models import StoreSettings
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_lang(lang: str | None) -> str:
@@ -244,6 +247,71 @@ def _load_logo_bw(settings: StoreSettings):
     return img
 
 
+def _load_receipt_font(size: int):
+    from PIL import ImageFont
+
+    candidates = [
+        r"C:\Windows\Fonts\arial.ttf",
+        r"C:\Windows\Fonts\calibri.ttf",
+        r"C:\Windows\Fonts\tahoma.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ]
+    for path in candidates:
+        try:
+            font = ImageFont.truetype(path, size=size)
+            logger.info("Receipt bitmap font selected: %s", path)
+            return font
+        except Exception:
+            continue
+    logger.warning("Receipt bitmap fallback font selected (ImageFont.load_default)")
+    return ImageFont.load_default()
+
+
+def _receipt_text_images(text: str, *, receipt_width: str | None):
+    """
+    Render receipt body as one or more bitmap images to avoid printer codepage/charset issues.
+    """
+    from PIL import Image, ImageDraw
+
+    lines = (text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    if not lines:
+        lines = [""]
+
+    is_80 = (receipt_width or "").strip().lower() == "80mm"
+    width_px = 560 if is_80 else 420
+    font_size = 26 if is_80 else 22
+    side_pad = 10
+    top_pad = 8
+    line_gap = 8
+    max_chunk_height_px = 1100 if is_80 else 900
+
+    font = _load_receipt_font(font_size)
+    probe = Image.new("L", (32, 32), color=255)
+    draw_probe = ImageDraw.Draw(probe)
+    bbox = draw_probe.textbbox((0, 0), "Ag", font=font)
+    glyph_h = max(12, bbox[3] - bbox[1])
+    line_h = max(20, glyph_h + line_gap)
+
+    lines_per_chunk = max(1, (max_chunk_height_px - (top_pad * 2)) // line_h)
+    chunks: list[list[str]] = []
+    for i in range(0, len(lines), lines_per_chunk):
+        chunks.append(lines[i : i + lines_per_chunk])
+    if not chunks:
+        chunks = [[""]]
+
+    images = []
+    for chunk_lines in chunks:
+        height_px = top_pad * 2 + (len(chunk_lines) * line_h)
+        img = Image.new("L", (width_px, max(64, height_px)), color=255)
+        draw = ImageDraw.Draw(img)
+        y = top_pad
+        for ln in chunk_lines:
+            draw.text((side_pad, y), ln, fill=0, font=font)
+            y += line_h
+        images.append(img.point(lambda x: 255 if x > 180 else 0, mode="1"))
+    return images
+
+
 def _escpos_release(printer: object) -> None:
     """Close python-escpos printer handle (Dummy buffers or real USB/File backends)."""
     close = getattr(printer, "close", None)
@@ -295,26 +363,19 @@ def receipt_escpos_bytes(receipt: dict) -> bytes:
                 },
             }
         )
-        plain_lines = plain.split("\n")
-        brand_heading = plain_lines[0] if plain_lines else ""
-        plain_body = "\n".join(plain_lines[1:]) if len(plain_lines) > 1 else ""
-
+        # Print receipt body as bitmap image so Cyrillic is stable across printer firmware/codepages.
+        body_imgs = _receipt_text_images(
+            plain,
+            receipt_width=receipt.get("store", {}).get("receipt_width", "58mm"),
+        )
         try:
-            p.set(align="center", bold=True, double_width=True, double_height=True)
+            p.set(align="center")
         except Exception:
-            try:
-                p.set(align="center", bold=True)
-            except Exception:
-                p.set(align="center")
-        p.text(f"{brand_heading}\n\n")
-        try:
-            p.set(align="left", bold=False, double_width=False, double_height=False)
-        except Exception:
-            try:
-                p.set(align="left", bold=False)
-            except Exception:
-                p.set(align="left")
-        p.text(plain_body)
+            pass
+        for idx, body_img in enumerate(body_imgs):
+            p.image(body_img)
+            if idx < len(body_imgs) - 1:
+                p.text("\n")
         try:
             p.cut(mode="PART")
         except Exception:

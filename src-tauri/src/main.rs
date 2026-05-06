@@ -926,7 +926,7 @@ fn print_raw(payload: String, printer_name: Option<String>) -> Result<String, St
         // Brief pause so the USB driver can release the endpoint before the next RAW job (e.g. receipt → label).
         thread::sleep(Duration::from_millis(50));
         let label = target.unwrap_or("(default Windows printer)");
-        return Ok(format!("Printed to {label}"));
+        return Ok(format!("Queued to {label}"));
     }
 
     #[allow(unreachable_code)]

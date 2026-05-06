@@ -38,6 +38,7 @@ const ITEMS: Array<{ id: Section; labelKey: string; icon: LucideIcon }> = [
   { id: 'sales', labelKey: 'admin.sidebar.sales', icon: History },
   { id: 'settings', labelKey: 'admin.sidebar.settings', icon: Settings },
 ]
+const CASHIER_MENU: Section[] = ['pos', 'sales', 'debts', 'shift', 'printer', 'stock']
 
 export function AdminSidebar({
   active,
@@ -53,7 +54,7 @@ export function AdminSidebar({
   const { t, i18n } = useTranslation()
   const visibleItems =
     role === 'CASHIER'
-      ? ITEMS.filter((item) => ['pos', 'shift', 'stock', 'debts', 'printer', 'sales'].includes(item.id))
+      ? ITEMS.filter((item) => CASHIER_MENU.includes(item.id))
       : ITEMS
 
   return (
