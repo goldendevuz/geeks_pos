@@ -201,7 +201,10 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^http://localhost:\d+$",
 ]
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_HEADERS = (*default_headers, "authorization")
+# Tauri/WebView2 uses CORS rules. Some POST requests include custom headers that trigger preflight
+# (e.g. Idempotency-Key on /api/sales/complete/). If not allowlisted, the browser reports "Failed to fetch"
+# and the request never reaches Django views (backend.log remains clean).
+CORS_ALLOW_HEADERS = (*default_headers, "authorization", "idempotency-key", "x-csrftoken")
 
 # License / Owner Dashboard (set in production)
 # Must be absolute, e.g. https://api.geeks.uz — not a path-only value like /api/v1/ (see licensing.remote_client).
