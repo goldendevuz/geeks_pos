@@ -143,13 +143,27 @@ fn runtime_secret_key() -> String {
 }
 
 fn internal_flush_key() -> String {
-    std::env::var("INTERNAL_FLUSH_KEY").unwrap_or_else(|_| {
-        if cfg!(debug_assertions) {
-            "dev-internal-flush-key".to_string()
-        } else {
-            String::new()
+    if let Ok(v) = std::env::var("INTERNAL_FLUSH_KEY") {
+        let trimmed = v.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
         }
-    })
+    }
+    let path = app_home_dir().join("internal_flush.key");
+    if let Ok(existing) = fs::read_to_string(&path) {
+        let trimmed = existing.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    if cfg!(debug_assertions) {
+        let dev = "dev-internal-flush-key".to_string();
+        let _ = fs::write(&path, &dev);
+        return dev;
+    }
+    let generated = format!("flush-{}", uuid::Uuid::new_v4());
+    let _ = fs::write(&path, &generated);
+    generated
 }
 
 fn post_notification_flush(port: u16) {
@@ -446,6 +460,7 @@ fn pick_backend_port(preferred: u16) -> u16 {
 fn backend_command(app: &tauri::AppHandle, port: u16) -> Result<Command, String> {
     let waitress_threads = std::env::var("WAITRESS_THREADS").unwrap_or_else(|_| "2".to_string());
     let secret_key = runtime_secret_key();
+    let flush_key = internal_flush_key();
     let django_debug = if cfg!(debug_assertions) { "1" } else { "0" };
     let allow_db_override = if cfg!(debug_assertions) { "1" } else { "0" };
     if let Some(sidecar) = backend_sidecar_path(app) {
@@ -464,6 +479,7 @@ fn backend_command(app: &tauri::AppHandle, port: u16) -> Result<Command, String>
             .env("DJANGO_DEBUG", django_debug)
             .env("GEEKS_POS_ALLOW_DB_OVERRIDE", allow_db_override)
             .env("DJANGO_SECRET_KEY", &secret_key)
+            .env("INTERNAL_FLUSH_KEY", &flush_key)
             .env("PYTHONUNBUFFERED", "1")
             .env("WAITRESS_THREADS", &waitress_threads);
         return Ok(cmd);
@@ -495,6 +511,7 @@ fn backend_command(app: &tauri::AppHandle, port: u16) -> Result<Command, String>
                 .env("DJANGO_DEBUG", django_debug)
                 .env("GEEKS_POS_ALLOW_DB_OVERRIDE", allow_db_override)
                 .env("DJANGO_SECRET_KEY", &secret_key)
+                .env("INTERNAL_FLUSH_KEY", &flush_key)
                 .env("PYTHONUNBUFFERED", "1")
                 .env("WAITRESS_THREADS", &waitress_threads);
             return Ok(cmd);
@@ -513,6 +530,7 @@ fn backend_command(app: &tauri::AppHandle, port: u16) -> Result<Command, String>
                 .env("DJANGO_DEBUG", django_debug)
                 .env("GEEKS_POS_ALLOW_DB_OVERRIDE", allow_db_override)
                 .env("DJANGO_SECRET_KEY", &secret_key)
+                .env("INTERNAL_FLUSH_KEY", &flush_key)
                 .env("PYTHONUNBUFFERED", "1")
                 .env("WAITRESS_THREADS", &waitress_threads);
             return Ok(cmd);

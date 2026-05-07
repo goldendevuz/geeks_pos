@@ -1,4 +1,5 @@
-﻿import re
+﻿import os
+import re
 import logging
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -312,6 +313,31 @@ def _receipt_text_images(text: str, *, receipt_width: str | None):
     return images
 
 
+def _choose_receipt_codepage(*, lang: str, settings: StoreSettings) -> str:
+    forced = (os.environ.get("FORCE_RECEIPT_CODEPAGE", "") or "").strip().upper()
+    if forced in {"CP866", "CP1251"}:
+        return forced
+    if lang == "ru":
+        return "CP1251"
+    return (settings.encoding or "CP866").strip().upper()
+
+
+def _emit_text_manual_encoded(printer: object, text: str, codepage: str) -> bool:
+    """
+    Encode text manually and write raw bytes (fallback for firmware/codepage quirks).
+    """
+    raw = getattr(printer, "_raw", None)
+    if not callable(raw):
+        return False
+    py_enc = "cp1251" if codepage == "CP1251" else "cp866"
+    try:
+        payload = (text or "").encode(py_enc, errors="replace")
+        raw(payload)
+        return True
+    except Exception:
+        return False
+
+
 def _escpos_release(printer: object) -> None:
     """Close python-escpos printer handle (Dummy buffers or real USB/File backends)."""
     close = getattr(printer, "close", None)
@@ -332,10 +358,8 @@ def receipt_escpos_bytes(receipt: dict) -> bytes:
         try:
             p.hw("INIT")
             lang = _normalize_lang(receipt.get("store", {}).get("lang", "ru"))
-            if lang == "ru":
-                p.charcode("CP1251")
-            else:
-                p.charcode((settings.encoding or "cp866").upper())
+            codepage = _choose_receipt_codepage(lang=lang, settings=settings)
+            p.charcode(codepage)
         except Exception:
             try:
                 p.charcode("CP1251")
@@ -363,19 +387,61 @@ def receipt_escpos_bytes(receipt: dict) -> bytes:
                 },
             }
         )
-        # Print receipt body as bitmap image so Cyrillic is stable across printer firmware/codepages.
-        body_imgs = _receipt_text_images(
-            plain,
-            receipt_width=receipt.get("store", {}).get("receipt_width", "58mm"),
-        )
-        try:
-            p.set(align="center")
-        except Exception:
-            pass
-        for idx, body_img in enumerate(body_imgs):
-            p.image(body_img)
-            if idx < len(body_imgs) - 1:
-                p.text("\n")
+        render_mode = (os.environ.get("RECEIPT_RENDER_MODE", "text") or "text").strip().lower()
+        manual_encode = (os.environ.get("RECEIPT_MANUAL_ENCODE", "0") or "0").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        if render_mode == "image":
+            # Optional mode: bitmap body to bypass codepage issues on some models.
+            body_imgs = _receipt_text_images(
+                plain,
+                receipt_width=receipt.get("store", {}).get("receipt_width", "58mm"),
+            )
+            try:
+                p.set(align="center")
+            except Exception:
+                pass
+            for idx, body_img in enumerate(body_imgs):
+                p.image(body_img)
+                if idx < len(body_imgs) - 1:
+                    p.text("\n")
+        else:
+            # Safer default for broader ESC/POS compatibility.
+            plain_lines = plain.split("\n")
+            brand_heading = plain_lines[0] if plain_lines else ""
+            plain_body = "\n".join(plain_lines[1:]) if len(plain_lines) > 1 else ""
+
+            try:
+                p.set(align="center", bold=True, double_width=True, double_height=True)
+            except Exception:
+                try:
+                    p.set(align="center", bold=True)
+                except Exception:
+                    p.set(align="center")
+            p.text(f"{brand_heading}\n\n")
+            try:
+                p.set(align="left", bold=False, double_width=False, double_height=False)
+            except Exception:
+                try:
+                    p.set(align="left", bold=False)
+                except Exception:
+                    p.set(align="left")
+            if manual_encode:
+                done = _emit_text_manual_encoded(
+                    p,
+                    plain_body,
+                    _choose_receipt_codepage(
+                        lang=_normalize_lang(receipt.get("store", {}).get("lang", "ru")),
+                        settings=settings,
+                    ),
+                )
+                if not done:
+                    p.text(plain_body)
+            else:
+                p.text(plain_body)
         try:
             p.cut(mode="PART")
         except Exception:

@@ -16,7 +16,13 @@ class NotificationDeliveryError(ValueError):
         self.retriable = retriable
 
 
-def _post_json(url: str, payload: dict, headers: dict[str, str] | None = None):
+def _post_json(
+    url: str,
+    payload: dict,
+    headers: dict[str, str] | None = None,
+    *,
+    require_ok_field: bool = False,
+):
     data = json.dumps(payload).encode("utf-8")
     req = Request(url, data=data, method="POST")
     req.add_header("Content-Type", "application/json")
@@ -26,6 +32,19 @@ def _post_json(url: str, payload: dict, headers: dict[str, str] | None = None):
     try:
         with urlopen(req, timeout=15) as resp:  # nosec B310 - controlled admin config URL
             body = resp.read().decode("utf-8") if resp else ""
+            if require_ok_field:
+                try:
+                    parsed = json.loads(body or "{}")
+                except json.JSONDecodeError:
+                    return False, "Invalid JSON response"
+                if not bool(parsed.get("ok")):
+                    detail = (
+                        parsed.get("description")
+                        or parsed.get("error")
+                        or parsed.get("message")
+                        or "ok=false"
+                    )
+                    return False, f"API ok=false: {detail}"
             return True, body
     except HTTPError as e:
         return False, f"HTTP {e.code}"
@@ -165,6 +184,7 @@ def _send_telegram_text(*, settings: IntegrationSettings, text: str):
     ok, details = _post_json(
         f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage",
         {"chat_id": settings.telegram_chat_id, "text": text},
+        require_ok_field=True,
     )
     if not ok:
         retriable = "HTTP 4" not in details or "HTTP 429" in details
