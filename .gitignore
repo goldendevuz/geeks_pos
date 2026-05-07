@@ -26,3 +26,5 @@ src-tauri/bin/*
 # Local env / logs
 .env
 *.log
+
+_backup/
