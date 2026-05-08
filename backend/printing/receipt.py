@@ -140,8 +140,8 @@ def sale_to_receipt_dict(sale, *, lang: str = "uz") -> dict:
             }
         )
     pays = [{"method": p.method, "amount": _format_amount(p.amount)} for p in sale.payments.all()]
-    # Receipt language is forced to Russian.
-    normalized_lang = "ru"
+    # Receipt output is forced to Uzbek/Latin to avoid Cyrillic codepage issues on some printers.
+    normalized_lang = "uz"
 
     return {
         "store": {
@@ -228,6 +228,7 @@ def receipt_plain_text(receipt: dict) -> str:
 
 def _load_logo_bw(settings: StoreSettings):
     from PIL import Image
+    resample = getattr(Image, "Resampling", Image).LANCZOS
 
     if not settings.logo:
         return None
@@ -236,15 +237,24 @@ def _load_logo_bw(settings: StoreSettings):
     except Exception:
         return None
 
+    # Normalize to grayscale first.
     img = img.convert("L")
-    threshold = 200
-    img = img.point(lambda x: 255 if x > threshold else 0, mode="1")
 
-    # Keep logo compact for 58mm rolls to avoid dark smearing.
-    max_width = 420
+    # Keep logo compact and avoid dark "smearing" on thermal paper.
+    is_80 = (getattr(settings, "receipt_width", "") or "").strip().lower() == "80mm"
+    max_width = 500 if is_80 else 340
+    max_height = 170 if is_80 else 120
+
     if img.width > max_width:
         ratio = max_width / float(img.width)
-        img = img.resize((max_width, int(img.height * ratio)))
+        img = img.resize((max_width, max(1, int(img.height * ratio))), resample)
+    if img.height > max_height:
+        ratio = max_height / float(img.height)
+        img = img.resize((max(1, int(img.width * ratio)), max_height), resample)
+
+    # Slightly lighter threshold reduces black blobs on low-cost thermal heads.
+    threshold = 225
+    img = img.point(lambda x: 255 if x > threshold else 0, mode="1")
     return img
 
 
