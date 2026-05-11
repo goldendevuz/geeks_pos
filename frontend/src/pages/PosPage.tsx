@@ -88,7 +88,7 @@ function calcGrand(subtotal: Decimal, discount: Decimal): Decimal {
 }
 
 const AFTER_SCAN_FOCUS_KEY = 'pos_after_scan_focus'
-const LOW_STOCK_THRESHOLD = 5
+const LOW_STOCK_THRESHOLD = 3
 /** Ignore identical barcode scans within this window (keyboard wedge duplicates). */
 const SCAN_DEBOUNCE_MS = 200
 
@@ -184,11 +184,30 @@ export function PosPage({
   const grandDec = useMemo(() => calcGrand(subtotalDec, discountDec), [subtotalDec, discountDec])
   const grand = grandDec.toString()
 
-  const lowStockLines = useMemo(() => {
-    return cart.filter((l) => {
-      const stock = Number(l.stockQty ?? 0)
-      const remaining = stock - l.qty
-      return remaining >= 0 && remaining <= LOW_STOCK_THRESHOLD
+  const lowStockModels = useMemo(() => {
+    const byProduct = new Map<
+      string,
+      {
+        id: string
+        name: string
+        totalStock: number
+        soldQty: number
+      }
+    >()
+    const seenVariant = new Set<string>()
+    for (const l of cart) {
+      const key = l.productId || l.variantId
+      const current = byProduct.get(key) || { id: key, name: l.name, totalStock: 0, soldQty: 0 }
+      current.soldQty += l.qty
+      if (!seenVariant.has(l.variantId)) {
+        current.totalStock += Math.max(0, Number(l.stockQty ?? 0))
+        seenVariant.add(l.variantId)
+      }
+      byProduct.set(key, current)
+    }
+    return Array.from(byProduct.values()).filter((row) => {
+      const remaining = row.totalStock - row.soldQty
+      return remaining >= 0 && remaining < LOW_STOCK_THRESHOLD
     })
   }, [cart])
 
@@ -498,12 +517,9 @@ export function PosPage({
   }
 
   function addVariantToCart(v: PosVariant, opts?: { clearSearch?: boolean }) {
-    const productNameRu = (v as PosVariant & { product_name_ru?: string }).product_name_ru
-    const sizeLabelRu = (v as PosVariant & { size_label_ru?: string }).size_label_ru
-    const colorLabelRu = (v as PosVariant & { color_label_ru?: string }).color_label_ru
-    const productName = i18n.language.startsWith('ru') ? productNameRu || v.product_name_uz : v.product_name_uz
-    const sizeLabel = i18n.language.startsWith('ru') ? sizeLabelRu || v.size_label_uz : v.size_label_uz
-    const colorLabel = i18n.language.startsWith('ru') ? colorLabelRu || v.color_label_uz : v.color_label_uz
+    const productName = i18n.language.startsWith('ru') ? v.product_name_ru || v.product_name_uz : v.product_name_uz
+    const sizeLabel = i18n.language.startsWith('ru') ? v.size_label_ru || v.size_label_uz : v.size_label_uz
+    const colorLabel = i18n.language.startsWith('ru') ? v.color_label_ru || v.color_label_uz : v.color_label_uz
     addLine({
       variantId: v.id,
       productId: v.product,
@@ -975,14 +991,13 @@ export function PosPage({
           {printBanner}
         </div>
       )}
-      {lowStockLines.length > 0 && (
+      {lowStockModels.length > 0 && (
         <div className="mx-4 mt-2 px-3 py-2 rounded text-sm bg-amber-950/90 border border-amber-700 text-amber-50 max-h-[min(10rem,22vh)] min-h-0 flex flex-col">
-          <div className="font-medium shrink-0">{t('pos.lowStockWarning', { n: LOW_STOCK_THRESHOLD })}</div>
+          <div className="font-medium shrink-0">{t('pos.lowStockModelWarning', { n: LOW_STOCK_THRESHOLD })}</div>
           <ul className="mt-1 list-disc list-inside text-xs opacity-95 overflow-y-auto min-h-0 kiosk-scrollbar pr-1">
-            {lowStockLines.map((l) => (
-              <li key={l.variantId}>
-                {l.name} — {l.colorLabel} / {l.sizeLabel}:{' '}
-                {t('pos.afterSaleStock', { count: Math.max(0, Number(l.stockQty ?? 0) - l.qty) })}
+            {lowStockModels.map((row) => (
+              <li key={row.id}>
+                {row.name}: {t('pos.afterSaleModelStock', { count: Math.max(0, row.totalStock - row.soldQty) })}
               </li>
             ))}
           </ul>
@@ -1040,16 +1055,16 @@ export function PosPage({
                   >
                     <div className="font-medium">
                       {i18n.language.startsWith('ru')
-                        ? (v as PosVariant & { product_name_ru?: string }).product_name_ru || v.product_name_uz
+                        ? v.product_name_ru || v.product_name_uz
                         : v.product_name_uz}
                     </div>
                     <div className="text-xs text-slate-400">
                       {(i18n.language.startsWith('ru')
-                        ? (v as PosVariant & { color_label_ru?: string }).color_label_ru || v.color_label_uz
+                        ? v.color_label_ru || v.color_label_uz
                         : v.color_label_uz)}{' '}
                       /{' '}
                       {(i18n.language.startsWith('ru')
-                        ? (v as PosVariant & { size_label_ru?: string }).size_label_ru || v.size_label_uz
+                        ? v.size_label_ru || v.size_label_uz
                         : v.size_label_uz)}{' '}
                       · {formatMoney(String(v.list_price))} ·{' '}
                       {t('admin.catalog.stock')}: {v.stock_qty}
@@ -1493,7 +1508,7 @@ export function PosPage({
                         <td className="p-3">
                           <div className="font-medium">
                             {i18n.language.startsWith('ru')
-                              ? (r as PosVariant & { size_label_ru?: string }).size_label_ru || r.size_label_uz
+                              ? r.size_label_ru || r.size_label_uz
                               : r.size_label_uz}
                           </div>
                           {r.barcode ? <div className="text-xs text-slate-500 font-mono">{r.barcode}</div> : null}

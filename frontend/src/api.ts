@@ -193,10 +193,13 @@ export type PosVariant = {
   id: string
   product: string
   product_name_uz: string
+  product_name_ru?: string
   size: string
   size_label_uz: string
+  size_label_ru?: string
   color: string
   color_label_uz: string
+  color_label_ru?: string
   barcode: string | null
   list_price: string
   stock_qty: number
@@ -465,10 +468,13 @@ export type Variant = {
   id: string
   product: string
   product_name_uz: string
+  product_name_ru?: string
   size: string
   size_label_uz: string
+  size_label_ru?: string
   color: string
   color_label_uz: string
+  color_label_ru?: string
   barcode: string | null
   purchase_price: string
   list_price: string
@@ -604,6 +610,20 @@ export async function createProduct(body: {
   const j = await r.json().catch(() => ({}))
   if (!r.ok) throw new AppError(j.code || 'CREATE_PRODUCT_FAILED', j.detail)
   return j as Product
+}
+
+export async function deleteProduct(productId: string, hard = true) {
+  const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
+  const suffix = hard ? '?hard=1' : ''
+  const r = await fetch(`${API}/api/catalog/products/${productId}/${suffix}`, {
+    method: 'DELETE',
+    credentials: 'include',
+    headers: { 'X-CSRFToken': csrf },
+  })
+  if (r.status === 204) return { code: 'HARD_DELETED' as const }
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw new AppError(j.code || 'DELETE_PRODUCT_FAILED', j.detail)
+  return j as { code?: string }
 }
 
 export async function fetchVariants(params?: {

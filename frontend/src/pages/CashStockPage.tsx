@@ -44,6 +44,16 @@ export function CashStockPage() {
   const maxPage = data ? Math.max(1, Math.ceil(data.count / 20)) : 1
   const rows = data?.results ?? []
 
+  function stockRowClass(v: CashierStockVariant) {
+    if (!v.is_active) {
+      return 'bg-violet-950/30 border-l-[3px] border-violet-500/55 text-slate-400'
+    }
+    if (Number(v.stock_qty ?? 0) <= 0) {
+      return 'bg-amber-950/40 border-l-[3px] border-amber-600/90 text-slate-100'
+    }
+    return ''
+  }
+
   return (
     <div className="p-4 space-y-4">
       <h2 className="text-xl font-semibold">{t('admin.cashier.stockTitle')}</h2>
@@ -75,7 +85,7 @@ export function CashStockPage() {
               </tr>
             ) : (
               rows.map((v) => (
-                <tr key={v.id} className="border-t border-slate-800">
+                <tr key={v.id} className={`border-t border-slate-800 ${stockRowClass(v)}`}>
                   <td className="p-2">
                     {i18n.language.startsWith('ru') ? v.product_name_ru || v.product_name_uz : v.product_name_uz}
                   </td>

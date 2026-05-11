@@ -88,7 +88,7 @@ class ProductListCreate(generics.ListCreateAPIView):
 
 
 class CashierStockListView(generics.ListAPIView):
-    """Paginated active variants for cashiers (read-only, no purchase_price)."""
+    """Paginated variants for cashiers (read-only, no purchase_price); inactive rows included."""
 
     serializer_class = CashierStockRowSerializer
     permission_classes = [IsAuthenticated, IsCashier]
@@ -97,7 +97,7 @@ class CashierStockListView(generics.ListAPIView):
     def get_queryset(self):
         query = (self.request.query_params.get("q") or "").strip()
         qs = ProductVariant.objects.select_related("product", "size", "color").filter(
-            is_active=True, deleted_at__isnull=True
+            deleted_at__isnull=True
         )
         if query:
             qs = qs.filter(

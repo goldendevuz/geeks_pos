@@ -10,6 +10,8 @@ import {
   createSize,
   createStocktakeSession,
   createVariantBulkGrid,
+  deleteCategory,
+  deleteProduct,
   deleteVariant,
   exportSalesXlsx,
   fetchCategories,
@@ -440,6 +442,14 @@ export default function App() {
                   await createColor(payload)
                   await refreshAdminData()
                 }}
+                onDeleteCategory={async (categoryId) => {
+                  await deleteCategory(categoryId)
+                  await refreshAdminData()
+                }}
+                onDeleteProduct={async (productId) => {
+                  await deleteProduct(productId, true)
+                  await refreshAdminData()
+                }}
                 onAdjustStockQuick={async (variantId, qtyDelta, note) => {
                   await adjustInventory(variantId, qtyDelta, note)
                   await refreshAdminData()
@@ -598,6 +608,8 @@ function AdminPanel(props: {
   onCreateProduct: (payload: { category: string; name_uz: string; name_ru: string }) => Promise<void>
   onCreateSize: (payload: { value: string; label_uz: string; label_ru: string; sort_order?: number }) => Promise<void>
   onCreateColor: (payload: { value: string; label_uz: string; label_ru: string; sort_order?: number }) => Promise<void>
+  onDeleteCategory: (categoryId: string) => Promise<void>
+  onDeleteProduct: (productId: string) => Promise<void>
   onToggleVariant: (v: Variant) => Promise<void>
   onUpdateVariant: (
     v: Variant,
@@ -730,6 +742,9 @@ function AdminPanel(props: {
                 onCreateCategory={props.onCreateCategory}
                 onCreateProduct={props.onCreateProduct}
                 onCreateSize={props.onCreateSize}
+                onCreateColor={props.onCreateColor}
+                onDeleteCategory={props.onDeleteCategory}
+                onDeleteProduct={props.onDeleteProduct}
                 onAdjustStockQuick={props.onAdjustStockQuick}
                 onPrintSticker={props.onPrintSticker}
                 onPrintStickerQueue={props.onPrintStickerQueue}

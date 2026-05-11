@@ -36,8 +36,11 @@ class ProductSerializer(serializers.ModelSerializer):
 
 class ProductVariantSerializer(serializers.ModelSerializer):
     product_name_uz = serializers.CharField(source="product.name_uz", read_only=True)
+    product_name_ru = serializers.CharField(source="product.name_ru", read_only=True)
     size_label_uz = serializers.CharField(source="size.label_uz", read_only=True)
+    size_label_ru = serializers.CharField(source="size.label_ru", read_only=True)
     color_label_uz = serializers.CharField(source="color.label_uz", read_only=True)
+    color_label_ru = serializers.CharField(source="color.label_ru", read_only=True)
 
     class Meta:
         model = ProductVariant
@@ -45,10 +48,13 @@ class ProductVariantSerializer(serializers.ModelSerializer):
             "id",
             "product",
             "product_name_uz",
+            "product_name_ru",
             "size",
             "size_label_uz",
+            "size_label_ru",
             "color",
             "color_label_uz",
+            "color_label_ru",
             "barcode",
             "purchase_price",
             "list_price",
@@ -97,8 +103,11 @@ class PosProductVariantSerializer(serializers.ModelSerializer):
     """POS / cashier: no purchase_price (financial field)."""
 
     product_name_uz = serializers.CharField(source="product.name_uz", read_only=True)
+    product_name_ru = serializers.CharField(source="product.name_ru", read_only=True)
     size_label_uz = serializers.CharField(source="size.label_uz", read_only=True)
+    size_label_ru = serializers.CharField(source="size.label_ru", read_only=True)
     color_label_uz = serializers.CharField(source="color.label_uz", read_only=True)
+    color_label_ru = serializers.CharField(source="color.label_ru", read_only=True)
 
     class Meta:
         model = ProductVariant
@@ -106,10 +115,13 @@ class PosProductVariantSerializer(serializers.ModelSerializer):
             "id",
             "product",
             "product_name_uz",
+            "product_name_ru",
             "size",
             "size_label_uz",
+            "size_label_ru",
             "color",
             "color_label_uz",
+            "color_label_ru",
             "barcode",
             "list_price",
             "stock_qty",

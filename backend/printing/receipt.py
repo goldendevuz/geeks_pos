@@ -10,13 +10,17 @@ logger = logging.getLogger(__name__)
 
 def _normalize_lang(lang: str | None) -> str:
     v = (lang or "uz").lower()
+    if v.startswith("ky"):
+        return "ky"
     return "ru" if v.startswith("ru") else "uz"
 
 
 def _labels(lang: str) -> dict[str, str]:
-    if _normalize_lang(lang) == "ru":
+    normalized = _normalize_lang(lang)
+    if normalized == "ru":
         return {
             "tel": "Тел",
+            "address": "Адрес",
             "sale": "Продажа",
             "time": "Время",
             "cashier": "Кассир",
@@ -28,8 +32,24 @@ def _labels(lang: str) -> dict[str, str]:
             "method.CARD": "Карта",
             "method.DEBT": "Долг",
         }
+    if normalized == "ky":
+        return {
+            "tel": "Тел",
+            "address": "Дарек",
+            "sale": "Сатуу",
+            "time": "Убакыт",
+            "cashier": "Кассир",
+            "subtotal": "Аралык жыйынтык",
+            "discount": "Женилдик",
+            "total": "ЖАЛПЫ",
+            "footer": "Рахмат!",
+            "method.CASH": "Нак акча",
+            "method.CARD": "Карта",
+            "method.DEBT": "Карыз",
+        }
     return {
         "tel": "Tel",
+        "address": "Manzil",
         "sale": "Savdo",
         "time": "Vaqt",
         "cashier": "Kassir",
@@ -140,8 +160,8 @@ def sale_to_receipt_dict(sale, *, lang: str = "uz") -> dict:
             }
         )
     pays = [{"method": p.method, "amount": _format_amount(p.amount)} for p in sale.payments.all()]
-    # Receipt output is forced to Uzbek/Latin to avoid Cyrillic codepage issues on some printers.
-    normalized_lang = "uz"
+    # Kyrgyz labels, product fields still sourced from RU fields for now.
+    normalized_lang = "ky"
 
     return {
         "store": {
@@ -191,7 +211,7 @@ def receipt_plain_text(receipt: dict) -> str:
     brand = t(store.get("brand_name", "GEEKS POS"))
     buf.append(brand)
     if store.get("address"):
-        for row in _wrap_text(f"Адрес: {t(store['address'])}", width):
+        for row in _wrap_text(f"{labels['address']}: {t(store['address'])}", width):
             buf.append(row)
     if store.get("phone"):
         buf.append(f"{labels['tel']}: {t(store['phone'])}")
@@ -327,7 +347,7 @@ def _choose_receipt_codepage(*, lang: str, settings: StoreSettings) -> str:
     forced = (os.environ.get("FORCE_RECEIPT_CODEPAGE", "") or "").strip().upper()
     if forced in {"CP866", "CP1251"}:
         return forced
-    if lang == "ru":
+    if lang in {"ru", "ky"}:
         return "CP1251"
     return (settings.encoding or "CP866").strip().upper()
 

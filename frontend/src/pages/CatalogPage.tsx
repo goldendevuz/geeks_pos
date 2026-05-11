@@ -20,9 +20,30 @@ const STANDARD_COLOR_VALUES = [
   'std_beige',
   'std_navy',
 ] as const
+const STANDARD_COLORS: Array<{ value: (typeof STANDARD_COLOR_VALUES)[number]; label_uz: string; label_ru: string }> = [
+  { value: 'std_black', label_uz: 'Qora', label_ru: 'Черный' },
+  { value: 'std_white', label_uz: 'Oq', label_ru: 'Белый' },
+  { value: 'std_gray', label_uz: 'Kulrang', label_ru: 'Серый' },
+  { value: 'std_brown', label_uz: 'Jigarrang', label_ru: 'Коричневый' },
+  { value: 'std_blue', label_uz: "Ko'k", label_ru: 'Синий' },
+  { value: 'std_red', label_uz: 'Qizil', label_ru: 'Красный' },
+  { value: 'std_yellow', label_uz: 'Sariq', label_ru: 'Желтый' },
+  { value: 'std_green', label_uz: 'Yashil', label_ru: 'Зеленый' },
+  { value: 'std_beige', label_uz: 'Sutrang', label_ru: 'Бежевый' },
+  { value: 'std_navy', label_uz: "To'q ko'k", label_ru: 'Темно-синий' },
+]
 
 const LABEL_SIZE_STORAGE_KEY = 'geeks_pos_catalog_label_size'
 const DEFAULT_LABEL_SIZE: LabelStickerSize = '40x30'
+const LOW_STOCK_THRESHOLD = 3
+
+type SizeLinePreset = 'children' | 'teen' | 'adult'
+
+const SIZE_LINE_RANGES: Record<SizeLinePreset, { min: number; max: number }> = {
+  children: { min: 31, max: 36 },
+  teen: { min: 36, max: 41 },
+  adult: { min: 40, max: 45 },
+}
 
 function normalizeSavedLabelSize(raw: string | null): LabelStickerSize {
   const v = (raw || '').trim()
@@ -55,6 +76,9 @@ export function CatalogPage({
   onCreateCategory,
   onCreateProduct,
   onCreateSize,
+  onCreateColor,
+  onDeleteCategory,
+  onDeleteProduct,
   onAdjustStockQuick,
   onPrintSticker,
   onPrintStickerQueue,
@@ -77,6 +101,9 @@ export function CatalogPage({
   onCreateCategory: (payload: { name_uz: string; name_ru: string }) => Promise<void>
   onCreateProduct: (payload: { category: string; name_uz: string; name_ru: string }) => Promise<void>
   onCreateSize: (payload: { value: string; label_uz: string; label_ru: string; sort_order?: number }) => Promise<void>
+  onCreateColor: (payload: { value: string; label_uz: string; label_ru: string; sort_order?: number }) => Promise<void>
+  onDeleteCategory: (categoryId: string) => Promise<void>
+  onDeleteProduct: (productId: string) => Promise<void>
   onAdjustStockQuick: (variantId: string, qtyDelta: number, note: string) => Promise<void>
   onPrintSticker: (variantId: string, copies: number, size: LabelStickerSize) => Promise<void>
   onPrintStickerQueue: (
@@ -102,7 +129,6 @@ export function CatalogPage({
     stock_qty: 0,
   })
   const [busy, setBusy] = useState(false)
-  const [seedBusy, setSeedBusy] = useState(false)
   const [editing, setEditing] = useState<Variant | null>(null)
   const [editPrice, setEditPrice] = useState('')
   const [editPurchase, setEditPurchase] = useState('')
@@ -141,16 +167,49 @@ export function CatalogPage({
   /** Raw digits when matrix numpad was opened. */
   const [matrixNumpadBaseline, setMatrixNumpadBaseline] = useState('0')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [confirmDeleteCategoryId, setConfirmDeleteCategoryId] = useState<string | null>(null)
+  const [confirmDeleteProductId, setConfirmDeleteProductId] = useState<string | null>(null)
   const [wizardOpen, setWizardOpen] = useState(false)
+  const [sizeLinePreset, setSizeLinePreset] = useState<SizeLinePreset>('adult')
 
   const shoeSizes = useMemo(() => {
+    const range = SIZE_LINE_RANGES[sizeLinePreset]
     return sizes
       .filter((s) => {
         const n = Number(s.value)
-        return Number.isFinite(n) && n >= 36 && n <= 45
+        return Number.isFinite(n) && n >= range.min && n <= range.max
       })
       .sort((a, b) => Number(a.value) - Number(b.value))
-  }, [sizes])
+  }, [sizes, sizeLinePreset])
+
+  const productStockTotals = useMemo(() => {
+    const totals: Record<string, number> = {}
+    for (const v of variants) {
+      const current = totals[v.product] || 0
+      totals[v.product] = current + Math.max(0, Number(v.stock_qty || 0))
+    }
+    return totals
+  }, [variants])
+
+  const lowStockProductCount = useMemo(() => {
+    const uniqueProducts = new Set<string>(variants.map((v) => v.product))
+    let count = 0
+    uniqueProducts.forEach((productId) => {
+      if ((productStockTotals[productId] || 0) < LOW_STOCK_THRESHOLD) count += 1
+    })
+    return count
+  }, [productStockTotals, variants])
+
+  /** Deactivated rows vs zero-stock (active) rows — distinct backgrounds. */
+  function catalogVariantRowClass(v: Variant) {
+    if (!v.is_active) {
+      return 'bg-violet-950/30 border-l-[3px] border-violet-500/55 text-slate-400'
+    }
+    if (Number(v.stock_qty ?? 0) <= 0) {
+      return 'bg-amber-950/40 border-l-[3px] border-amber-600/90 text-slate-100'
+    }
+    return ''
+  }
 
   const orderedColors = useMemo(() => {
     const std = STANDARD_COLOR_VALUES.map((val) => colors.find((c) => c.value === val)).filter(Boolean) as Color[]
@@ -183,11 +242,22 @@ export function CatalogPage({
     })
   }, [wizardStep, shoeSizes])
 
+  useEffect(() => {
+    if (wizardStep !== 2) return
+    if (form.color) return
+    if (orderedColors.length === 0) return
+    setForm((prev) => ({ ...prev, color: orderedColors[0].id }))
+  }, [wizardStep, form.color, orderedColors])
+
   function colorChipLabel(c: Color) {
     const key = `catalog.colors.standard.${c.value}`
     const translated = t(key)
     if (translated !== key) return translated
     return i18n.language.startsWith('ru') ? (c.label_ru || c.label_uz) : c.label_uz
+  }
+
+  function sizeRowLabel(s: Size) {
+    return i18n.language.startsWith('ru') ? (s.label_ru || s.label_uz) : s.label_uz
   }
 
   function colorChipStyle(value: string) {
@@ -323,7 +393,28 @@ export function CatalogPage({
     }
   }
 
-  function wizardNext() {
+  async function ensureSizeLineAndStandardColors() {
+    const range = SIZE_LINE_RANGES[sizeLinePreset]
+    for (let value = range.min; value <= range.max; value += 1) {
+      const asText = String(value)
+      if (!sizes.some((s) => s.value === asText || s.label_uz === asText || s.label_ru === asText)) {
+        await onCreateSize({ value: asText, label_uz: asText, label_ru: asText, sort_order: value })
+      }
+    }
+    for (let idx = 0; idx < STANDARD_COLORS.length; idx += 1) {
+      const color = STANDARD_COLORS[idx]
+      if (!colors.some((c) => c.value === color.value)) {
+        await onCreateColor({
+          value: color.value,
+          label_uz: color.label_ru,
+          label_ru: color.label_ru,
+          sort_order: idx + 1,
+        })
+      }
+    }
+  }
+
+  async function wizardNext() {
     if (wizardStep === 1) {
       if (!selectedBrand) {
         setToast(t('admin.catalog.wizard.needBrand'))
@@ -332,6 +423,16 @@ export function CatalogPage({
       if (!(selectedModel || form.product)) {
         setToast(t('admin.catalog.wizard.needModel'))
         return
+      }
+      setBusy(true)
+      try {
+        await ensureSizeLineAndStandardColors()
+      } catch (e: unknown) {
+        const code = (e as Error & { code?: string }).code
+        setToast(t(`err.${code || 'CREATE_SIZE_FAILED'}`))
+        return
+      } finally {
+        setBusy(false)
       }
       setWizardStep(2)
       return
@@ -381,22 +482,39 @@ export function CatalogPage({
     }
   }
 
-  async function seedStandardSizesColors() {
-    setSeedBusy(true)
+  async function deleteSelectedBrand() {
+    if (!selectedBrand) return
+    setBusy(true)
     try {
-      const sizeValues = Array.from({ length: 10 }, (_, i) => String(36 + i))
-      for (const value of sizeValues) {
-        if (!sizes.some((s) => s.label_uz === value)) {
-          await onCreateSize({ value, label_uz: value, label_ru: value, sort_order: Number(value) })
-        }
-      }
-      /* Standart ranglar migratsiya orqali (std_*) bazaga qo'shiladi */
-      setToast(t('admin.catalog.seedSuccess'))
+      await onDeleteCategory(selectedBrand)
+      setSelectedBrand('')
+      setSelectedModel('')
+      setForm((prev) => ({ ...prev, product: '' }))
+      setConfirmDeleteCategoryId(null)
+      setToast(t('admin.catalog.brandDeleted'))
     } catch (e: unknown) {
       const code = (e as Error & { code?: string }).code
-      setToast(t(`err.${code || 'CREATE_SIZE_FAILED'}`))
+      setToast(t(`err.${code || 'DELETE_CATEGORY_FAILED'}`))
     } finally {
-      setSeedBusy(false)
+      setBusy(false)
+    }
+  }
+
+  async function deleteSelectedModel() {
+    const modelId = selectedModel || form.product
+    if (!modelId) return
+    setBusy(true)
+    try {
+      await onDeleteProduct(modelId)
+      setSelectedModel('')
+      setForm((prev) => ({ ...prev, product: '' }))
+      setConfirmDeleteProductId(null)
+      setToast(t('admin.catalog.modelDeleted'))
+    } catch (e: unknown) {
+      const code = (e as Error & { code?: string }).code
+      setToast(t(`err.${code || 'DELETE_PRODUCT_FAILED'}`))
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -456,6 +574,15 @@ export function CatalogPage({
       <p className="text-xs text-slate-400">{t('admin.catalog.hint')}</p>
       <p className="text-xs text-slate-500">{t('admin.catalog.actionsHelp')}</p>
       <p className="text-xs text-emerald-400">{t('admin.catalog.barcodeSearchHelp', { defaultValue: 'Barcode bo‘yicha tez qidirish uchun kod kiriting (masalan 20000001).' })}</p>
+      {lowStockProductCount > 0 && (
+        <p className="text-xs text-amber-300">
+          {t('admin.catalog.lowStockModelsWarning', {
+            count: lowStockProductCount,
+            n: LOW_STOCK_THRESHOLD,
+            defaultValue: `Kam qoldiqdagi modellar: ${lowStockProductCount} ta (< ${LOW_STOCK_THRESHOLD})`,
+          })}
+        </p>
+      )}
 
       <div className="rounded border border-slate-700 bg-slate-900 p-4 space-y-4">
         <button
@@ -499,6 +626,14 @@ export function CatalogPage({
                   </option>
                 ))}
               </select>
+              <button
+                type="button"
+                disabled={!selectedBrand || busy}
+                className="touch-btn min-h-14 px-4 rounded-xl bg-red-900 border border-red-700 disabled:opacity-40"
+                onClick={() => setConfirmDeleteCategoryId(selectedBrand)}
+              >
+                {t('admin.catalog.deleteBrand')}
+              </button>
               <div className="flex gap-2">
                 <input
                   className="touch-btn min-h-14 flex-1 px-4 rounded-xl bg-slate-950 border border-slate-700 text-base"
@@ -535,10 +670,18 @@ export function CatalogPage({
                 <button
                   type="button"
                   className="touch-btn min-h-14 px-5 rounded-xl bg-emerald-700 border border-emerald-500 font-semibold shrink-0 inline-flex items-center justify-center gap-2"
-                  onClick={() => wizardNext()}
+                  onClick={() => void wizardNext()}
                 >
                   <PackagePlus className="h-5 w-5" aria-hidden />
                   {t('admin.catalog.wizard.addProductCta')}
+                </button>
+                <button
+                  type="button"
+                  disabled={!(selectedModel || form.product) || busy}
+                  className="touch-btn min-h-14 px-4 rounded-xl bg-red-900 border border-red-700 disabled:opacity-40 shrink-0"
+                  onClick={() => setConfirmDeleteProductId(selectedModel || form.product)}
+                >
+                  {t('admin.catalog.deleteModel')}
                 </button>
               </div>
               <div className="flex gap-2 md:col-span-2">
@@ -559,18 +702,32 @@ export function CatalogPage({
               </div>
             </div>
             <div className="flex flex-wrap justify-end gap-3 pt-2">
-              <button
-                type="button"
-                disabled={seedBusy}
-                className="touch-btn min-h-14 px-5 rounded-xl bg-slate-800 border border-slate-600 disabled:opacity-40"
-                onClick={() => void seedStandardSizesColors()}
-              >
-                {seedBusy ? t('admin.common.saving') : t('admin.catalog.seedStandard')}
-              </button>
+              <div className="w-full rounded-xl border border-slate-800 bg-slate-950 p-3">
+                <div className="text-sm text-slate-300 mb-2">{t('admin.catalog.sizeLinePresetTitle')}</div>
+                <div className="flex flex-wrap gap-2">
+                  {(['children', 'teen', 'adult'] as const).map((preset) => (
+                    <label
+                      key={preset}
+                      className={`touch-btn inline-flex items-center gap-2 min-h-12 px-3 rounded-xl border text-sm ${
+                        sizeLinePreset === preset
+                          ? 'border-emerald-500 bg-emerald-950/40 text-emerald-100'
+                          : 'border-slate-700 bg-slate-900'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={sizeLinePreset === preset}
+                        onChange={() => setSizeLinePreset(preset)}
+                      />
+                      {t(`admin.catalog.sizeLinePreset.${preset}`)}
+                    </label>
+                  ))}
+                </div>
+              </div>
               <button
                 type="button"
                 className="touch-btn min-h-14 px-6 rounded-xl bg-emerald-700 border border-emerald-500 font-semibold"
-                onClick={() => wizardNext()}
+                onClick={() => void wizardNext()}
               >
                 {t('admin.catalog.wizard.next')}
               </button>
@@ -613,7 +770,7 @@ export function CatalogPage({
               <button
                 type="button"
                 className="touch-btn min-h-14 px-6 rounded-xl bg-emerald-700 border border-emerald-500 font-semibold"
-                onClick={() => wizardNext()}
+                onClick={() => void wizardNext()}
               >
                 {t('admin.catalog.wizard.next')}
               </button>
@@ -623,7 +780,11 @@ export function CatalogPage({
 
         {wizardOpen && wizardStep === 3 && (
           <div className="space-y-4">
-            <div className="text-base text-slate-100">{t('admin.catalog.wizard.step3MatrixTitle')}</div>
+            <div className="text-base text-slate-100">
+              {t('admin.catalog.wizard.step3MatrixTitle', {
+                range: t(`admin.catalog.sizeLinePresetRange.${sizeLinePreset}`),
+              })}
+            </div>
             <p className="text-sm text-slate-400">{t('admin.catalog.wizard.step3MatrixHint')}</p>
             <div className="rounded-xl border border-slate-800 bg-slate-950 p-3 space-y-3">
               <div className="text-sm font-medium text-slate-200">{t('admin.catalog.wizard.applyDefaults')}</div>
@@ -669,7 +830,7 @@ export function CatalogPage({
                     const cell = matrixCells[s.id] || { purchase: '0', list: '0', qty: '0' }
                     return (
                       <tr key={s.id} className="border-t border-slate-800">
-                        <td className="p-2 font-semibold text-slate-200">{s.label_uz}</td>
+                        <td className="p-2 font-semibold text-slate-200">{sizeRowLabel(s)}</td>
                         <td className="p-2">
                           <button
                             type="button"
@@ -749,20 +910,23 @@ export function CatalogPage({
           </thead>
           {!useVirtualRows && (
           <tbody>
-            {variants.map((v) => (
-              <tr key={v.id} className="border-t border-slate-800">
+            {variants.map((v) => {
+              const modelTotalStock = productStockTotals[v.product] || 0
+              const isModelLow = modelTotalStock < LOW_STOCK_THRESHOLD
+              return (
+              <tr key={v.id} className={`border-t border-slate-800 ${catalogVariantRowClass(v)}`}>
                 <td className="p-2">
                   {i18n.language.startsWith('ru')
-                    ? (v as typeof v & { product_name_ru?: string }).product_name_ru || v.product_name_uz
+                    ? v.product_name_ru || v.product_name_uz
                     : v.product_name_uz}
                 </td>
                 <td className="p-2">
                   {i18n.language.startsWith('ru')
-                    ? (v as typeof v & { size_label_ru?: string }).size_label_ru || v.size_label_uz
+                    ? v.size_label_ru || v.size_label_uz
                     : v.size_label_uz}{' '}
                   /{' '}
                   {i18n.language.startsWith('ru')
-                    ? (v as typeof v & { color_label_ru?: string }).color_label_ru || v.color_label_uz
+                    ? v.color_label_ru || v.color_label_uz
                     : v.color_label_uz}
                 </td>
                 <td className="p-2">{v.barcode}</td>
@@ -777,6 +941,16 @@ export function CatalogPage({
                   >
                     {v.stock_qty} {t('admin.catalog.stockUnit')}
                   </button>
+                  <div
+                    className={`text-xs mt-1 ${
+                      !v.is_active ? 'text-slate-500' : isModelLow ? 'text-amber-300' : 'text-slate-500'
+                    }`}
+                  >
+                    {t('admin.catalog.modelStock', {
+                      count: modelTotalStock,
+                      defaultValue: `Model: ${modelTotalStock}`,
+                    })}
+                  </div>
                 </td>
                 <td className="p-2 text-right">{formatMoney(v.list_price)}</td>
                 <td className="p-2 text-right">
@@ -846,7 +1020,8 @@ export function CatalogPage({
                   </div>
                 </td>
               </tr>
-            ))}
+              )
+            })}
             {variants.length === 0 && (
               <tr>
                 <td colSpan={6} className="p-8 text-center text-slate-400">
@@ -865,24 +1040,41 @@ export function CatalogPage({
             style={{ height: Math.min(620, Math.max(260, variants.length * 74)), width: '100%' }}
             rowComponent={({ index, style, rows }: RowComponentProps<{ rows: Variant[] }>) => {
               const v = rows[index]
+              const modelTotalStock = productStockTotals[v.product] || 0
+              const isModelLow = modelTotalStock < LOW_STOCK_THRESHOLD
               return (
-                <div style={style} className="grid grid-cols-[1.3fr_1fr_0.8fr_0.7fr_0.8fr_2fr] items-center border-b border-slate-800 px-2 text-sm">
+                <div
+                  style={style}
+                  className={`grid grid-cols-[1.3fr_1fr_0.8fr_0.7fr_0.8fr_2fr] items-center border-b border-slate-800 px-2 text-sm ${catalogVariantRowClass(v)}`}
+                >
                   <div>
                     {i18n.language.startsWith('ru')
-                      ? (v as typeof v & { product_name_ru?: string }).product_name_ru || v.product_name_uz
+                      ? v.product_name_ru || v.product_name_uz
                       : v.product_name_uz}
                   </div>
                   <div>
                     {i18n.language.startsWith('ru')
-                      ? (v as typeof v & { size_label_ru?: string }).size_label_ru || v.size_label_uz
+                      ? v.size_label_ru || v.size_label_uz
                       : v.size_label_uz}{' '}
                     /{' '}
                     {i18n.language.startsWith('ru')
-                      ? (v as typeof v & { color_label_ru?: string }).color_label_ru || v.color_label_uz
+                      ? v.color_label_ru || v.color_label_uz
                       : v.color_label_uz}
                   </div>
                   <div>{v.barcode}</div>
-                  <div className="text-right">{v.stock_qty}</div>
+                  <div className="text-right">
+                    <div>{v.stock_qty}</div>
+                    <div
+                      className={`text-[11px] ${
+                        !v.is_active ? 'text-slate-500' : isModelLow ? 'text-amber-300' : 'text-slate-500'
+                      }`}
+                    >
+                      {t('admin.catalog.modelStock', {
+                        count: modelTotalStock,
+                        defaultValue: `Model: ${modelTotalStock}`,
+                      })}
+                    </div>
+                  </div>
                   <div className="text-right">{formatMoney(v.list_price)}</div>
                   <div className="text-right">
                     <div className="inline-flex gap-2">
@@ -987,8 +1179,7 @@ export function CatalogPage({
             <h3 className="text-lg font-semibold">{t('admin.catalog.quickAdjust')}</h3>
           <div className="text-sm text-slate-400">
             {i18n.language.startsWith('ru')
-              ? (quickAdjust as typeof quickAdjust & { product_name_ru?: string }).product_name_ru ||
-                quickAdjust.product_name_uz
+              ? quickAdjust.product_name_ru || quickAdjust.product_name_uz
               : quickAdjust.product_name_uz}{' '}
             / {quickAdjust.barcode}
           </div>
@@ -1081,7 +1272,7 @@ export function CatalogPage({
                       <tr key={variantId} className="border-t border-slate-800">
                         <td className="p-2">
                           {i18n.language.startsWith('ru')
-                            ? (v as typeof v & { product_name_ru?: string }).product_name_ru || v.product_name_uz
+                            ? v.product_name_ru || v.product_name_uz
                             : v.product_name_uz}
                         </td>
                         <td className="p-2">{v.barcode}</td>
@@ -1160,8 +1351,7 @@ export function CatalogPage({
             <h3 className="text-lg font-semibold">{t('admin.catalog.editVariant')}</h3>
             <div className="text-sm text-slate-400">
               {i18n.language.startsWith('ru')
-                ? (editing as typeof editing & { product_name_ru?: string }).product_name_ru ||
-                  editing.product_name_uz
+                ? editing.product_name_ru || editing.product_name_uz
                 : editing.product_name_uz}{' '}
               / {editing.barcode}
             </div>
@@ -1321,6 +1511,46 @@ export function CatalogPage({
                 }}
               >
                 {bulkStickerBusy ? t('admin.catalog.wizard.stickerAfterBulkWorking') : t('admin.catalog.wizard.stickerAfterBulkYes')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {confirmDeleteCategoryId && (
+        <div className="fixed inset-0 z-40 bg-black/70 flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 p-4 space-y-3">
+            <div className="text-base font-semibold">{t('admin.catalog.confirmDeleteBrand')}</div>
+            <p className="text-sm text-slate-400">{t('admin.catalog.deleteImpact', { defaultValue: 'Bog‘langan savdo mavjud bo‘lsa soft delete ishlatiladi.' })}</p>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="touch-btn min-h-12 px-3 py-2 rounded bg-slate-800 border border-slate-700" onClick={() => setConfirmDeleteCategoryId(null)}>
+                {t('admin.common.cancel')}
+              </button>
+              <button
+                type="button"
+                className="touch-btn min-h-12 px-3 py-2 rounded bg-red-700 border border-red-500"
+                onClick={() => void deleteSelectedBrand()}
+              >
+                {t('admin.catalog.deleteBrand')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {confirmDeleteProductId && (
+        <div className="fixed inset-0 z-40 bg-black/70 flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 p-4 space-y-3">
+            <div className="text-base font-semibold">{t('admin.catalog.confirmDeleteModel')}</div>
+            <p className="text-sm text-slate-400">{t('admin.catalog.deleteImpact', { defaultValue: 'Bog‘langan savdo mavjud bo‘lsa soft delete ishlatiladi.' })}</p>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="touch-btn min-h-12 px-3 py-2 rounded bg-slate-800 border border-slate-700" onClick={() => setConfirmDeleteProductId(null)}>
+                {t('admin.common.cancel')}
+              </button>
+              <button
+                type="button"
+                className="touch-btn min-h-12 px-3 py-2 rounded bg-red-700 border border-red-500"
+                onClick={() => void deleteSelectedModel()}
+              >
+                {t('admin.catalog.deleteModel')}
               </button>
             </div>
           </div>
