@@ -7,8 +7,8 @@ use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::PathBuf;
-use std::process::{Child, Command};
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -307,15 +307,17 @@ fn disable_windows_autostart_entries() {}
 
 #[cfg(windows)]
 fn stop_all_backend_processes() {
-    let _ = Command::new("taskkill")
-        .args(["/F", "/IM", "geeks_pos_backend.exe", "/T"])
-        .status();
-    let _ = Command::new("taskkill")
-        .args(["/F", "/IM", "geeks_pos_backend-x86_64-pc-windows-msvc.exe", "/T"])
-        .status();
-    let _ = Command::new("taskkill")
-        .args(["/F", "/IM", "geeks_pos_backend-i686-pc-windows-msvc.exe", "/T"])
-        .status();
+    for exe in [
+        "geeks_pos_backend.exe",
+        "geeks_pos_backend-x86_64-pc-windows-msvc.exe",
+        "geeks_pos_backend-i686-pc-windows-msvc.exe",
+    ] {
+        let _ = Command::new("taskkill")
+            .args(["/F", "/IM", exe, "/T"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
 }
 
 #[cfg(not(windows))]
@@ -413,8 +415,11 @@ fn health_ok(port: u16) -> bool {
 }
 
 fn backend_script_path() -> PathBuf {
+    // Stable path regardless of `npm run tauri:dev` cwd (repo root vs `backend/` vs `src-tauri/`).
+    let from_manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("../backend/run_waitress.py");
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let candidates = vec![
+        from_manifest,
         cwd.join("../backend/run_waitress.py"),
         cwd.join("backend/run_waitress.py"),
         PathBuf::from("../backend/run_waitress.py"),
@@ -425,7 +430,56 @@ fn backend_script_path() -> PathBuf {
             return p;
         }
     }
-    PathBuf::from("../backend/run_waitress.py")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../backend/run_waitress.py")
+}
+
+/// Live Django from the repo (`run_waitress.py`). Used in dev so `receipt.py` etc. apply without rebuilding PyInstaller.
+fn waitress_python_command(
+    script: &Path,
+    port: u16,
+    waitress_threads: &str,
+    django_debug: &str,
+    allow_db_override: &str,
+    secret_key: &str,
+    flush_key: &str,
+) -> Command {
+    #[cfg(windows)]
+    {
+        let mut cmd = Command::new("py");
+        cmd.arg("-3")
+            .arg(script)
+            .arg("--host")
+            .arg("127.0.0.1")
+            .arg("--port")
+            .arg(port.to_string())
+            .arg("--threads")
+            .arg(waitress_threads)
+            .env("DJANGO_DEBUG", django_debug)
+            .env("GEEKS_POS_ALLOW_DB_OVERRIDE", allow_db_override)
+            .env("DJANGO_SECRET_KEY", secret_key)
+            .env("INTERNAL_FLUSH_KEY", flush_key)
+            .env("PYTHONUNBUFFERED", "1")
+            .env("WAITRESS_THREADS", waitress_threads);
+        cmd
+    }
+    #[cfg(not(windows))]
+    {
+        let mut cmd = Command::new("python3");
+        cmd.arg(script)
+            .arg("--host")
+            .arg("127.0.0.1")
+            .arg("--port")
+            .arg(port.to_string())
+            .arg("--threads")
+            .arg(waitress_threads)
+            .env("DJANGO_DEBUG", django_debug)
+            .env("GEEKS_POS_ALLOW_DB_OVERRIDE", allow_db_override)
+            .env("DJANGO_SECRET_KEY", secret_key)
+            .env("INTERNAL_FLUSH_KEY", flush_key)
+            .env("PYTHONUNBUFFERED", "1")
+            .env("WAITRESS_THREADS", waitress_threads);
+        cmd
+    }
 }
 
 fn backend_sidecar_path(app: &tauri::AppHandle) -> Option<PathBuf> {
@@ -463,6 +517,28 @@ fn backend_command(app: &tauri::AppHandle, port: u16) -> Result<Command, String>
     let flush_key = internal_flush_key();
     let django_debug = if cfg!(debug_assertions) { "1" } else { "0" };
     let allow_db_override = if cfg!(debug_assertions) { "1" } else { "0" };
+
+    // Dev: prefer repo `run_waitress.py` over `geeks_pos_backend.exe` next to the app, or old sidecar wins and ignores `receipt.py` edits.
+    #[cfg(debug_assertions)]
+    {
+        let script = backend_script_path();
+        if script.exists() {
+            append_log_line(
+                "INFO",
+                &format!("Starting python backend (dev repo, not sidecar): {}", script.display()),
+            );
+            return Ok(waitress_python_command(
+                &script,
+                port,
+                &waitress_threads,
+                django_debug,
+                allow_db_override,
+                &secret_key,
+                &flush_key,
+            ));
+        }
+    }
+
     if let Some(sidecar) = backend_sidecar_path(app) {
         append_log_line("INFO", &format!("Starting sidecar backend: {}", sidecar.display()));
         append_log_line(
@@ -496,45 +572,19 @@ fn backend_command(app: &tauri::AppHandle, port: u16) -> Result<Command, String>
     #[cfg(debug_assertions)]
     {
         let script = backend_script_path();
-        append_log_line("INFO", &format!("Starting python backend: {}", script.display()));
-        #[cfg(windows)]
-        {
-            let mut cmd = Command::new("py");
-            cmd.arg("-3")
-                .arg(script)
-                .arg("--host")
-                .arg("127.0.0.1")
-                .arg("--port")
-                .arg(port.to_string())
-                .arg("--threads")
-                .arg(&waitress_threads)
-                .env("DJANGO_DEBUG", django_debug)
-                .env("GEEKS_POS_ALLOW_DB_OVERRIDE", allow_db_override)
-                .env("DJANGO_SECRET_KEY", &secret_key)
-                .env("INTERNAL_FLUSH_KEY", &flush_key)
-                .env("PYTHONUNBUFFERED", "1")
-                .env("WAITRESS_THREADS", &waitress_threads);
-            return Ok(cmd);
-        }
-
-        #[cfg(not(windows))]
-        {
-            let mut cmd = Command::new("python3");
-            cmd.arg(script)
-                .arg("--host")
-                .arg("127.0.0.1")
-                .arg("--port")
-                .arg(port.to_string())
-                .arg("--threads")
-                .arg(&waitress_threads)
-                .env("DJANGO_DEBUG", django_debug)
-                .env("GEEKS_POS_ALLOW_DB_OVERRIDE", allow_db_override)
-                .env("DJANGO_SECRET_KEY", &secret_key)
-                .env("INTERNAL_FLUSH_KEY", &flush_key)
-                .env("PYTHONUNBUFFERED", "1")
-                .env("WAITRESS_THREADS", &waitress_threads);
-            return Ok(cmd);
-        }
+        append_log_line(
+            "WARN",
+            &format!("run_waitress.py topilmadi, python baribir sinanadi: {}", script.display()),
+        );
+        return Ok(waitress_python_command(
+            &script,
+            port,
+            &waitress_threads,
+            django_debug,
+            allow_db_override,
+            &secret_key,
+            &flush_key,
+        ));
     }
 }
 

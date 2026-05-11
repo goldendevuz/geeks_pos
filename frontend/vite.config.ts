@@ -32,6 +32,13 @@ export default defineConfig({
       '/api': {
         target: API,
         changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('error', (err) => {
+            const msg = (err as Error)?.message ?? ''
+            if (msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT')) return
+            console.error('[vite proxy]', msg)
+          })
+        },
       },
     },
   },

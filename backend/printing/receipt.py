@@ -160,8 +160,8 @@ def sale_to_receipt_dict(sale, *, lang: str = "uz") -> dict:
             }
         )
     pays = [{"method": p.method, "amount": _format_amount(p.amount)} for p in sale.payments.all()]
-    # Kyrgyz labels, product fields still sourced from RU fields for now.
-    normalized_lang = "ky"
+    # Fixed receipt labels (Сатуу, Убакыт, ЖАЛПЫ, …): always Kyrgyz. HTTP `lang=` is ignored here.
+    store_label_lang = "ky"
 
     return {
         "store": {
@@ -171,7 +171,7 @@ def sale_to_receipt_dict(sale, *, lang: str = "uz") -> dict:
             "footer_note": settings.footer_note,
             "transliterate_uz": settings.transliterate_uz,
             "encoding": settings.encoding,
-            "lang": normalized_lang,
+            "lang": store_label_lang,
             "receipt_width": settings.receipt_width or "58mm",
             "receipt_printer_name": settings.receipt_printer_name or "",
             "receipt_printer_type": settings.receipt_printer_type,
@@ -200,7 +200,8 @@ def _normalize_text(text: str, translit: bool) -> str:
 def receipt_plain_text(receipt: dict) -> str:
     store = receipt.get("store", {})
     lang = _normalize_lang(store.get("lang", "uz"))
-    translit = bool(store.get("transliterate_uz", True)) and lang != "ru"
+    # Do not Latinize Cyrillic receipt bodies for RU/KY label sets.
+    translit = bool(store.get("transliterate_uz", True)) and lang not in ("ru", "ky")
     labels = _labels(lang)
 
     def t(v: str) -> str:
