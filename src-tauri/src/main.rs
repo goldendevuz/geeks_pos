@@ -433,6 +433,76 @@ fn backend_script_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../backend/run_waitress.py")
 }
 
+/// Loyihaning `Django>=5` venv interpretatori.
+/// Tartib: `backend/.venv`, `backend` bilan yonma-yon repo ildizidagi `.venv`, keyin `CARGO_MANIFEST_DIR` orqali xuddi shu yo‘llar.
+fn resolve_backend_venv_python(script: &Path) -> Option<PathBuf> {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if let Some(backend_dir) = script.parent() {
+        roots.push(backend_dir.join(".venv"));
+        roots.push(backend_dir.join("venv"));
+        // `geeks_pos/.venv` — `geeks_pos/backend/` bilan yonma-yon (ichkarida emas).
+        if let Some(repo_or_parent) = backend_dir.parent() {
+            roots.push(repo_or_parent.join(".venv"));
+            roots.push(repo_or_parent.join("venv"));
+        }
+    }
+    let manifest_repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let manifest_backend = manifest_repo.join("backend");
+    roots.push(manifest_backend.join(".venv"));
+    roots.push(manifest_backend.join("venv"));
+    roots.push(manifest_repo.join(".venv"));
+    roots.push(manifest_repo.join("venv"));
+
+    for root in roots {
+        let exe = venv_interpreter_path(&root);
+        if exe.exists() {
+            return Some(exe);
+        }
+    }
+    None
+}
+
+fn venv_interpreter_path(venv_root: &Path) -> PathBuf {
+    #[cfg(windows)]
+    {
+        venv_root.join("Scripts").join("python.exe")
+    }
+    #[cfg(not(windows))]
+    {
+        let bin3 = venv_root.join("bin").join("python3");
+        if bin3.exists() {
+            bin3
+        } else {
+            venv_root.join("bin").join("python")
+        }
+    }
+}
+
+fn attach_waitress_args_and_env(
+    cmd: &mut Command,
+    script: &Path,
+    port: u16,
+    waitress_threads: &str,
+    django_debug: &str,
+    allow_db_override: &str,
+    secret_key: &str,
+    flush_key: &str,
+) {
+    cmd.arg(script)
+        .arg("--host")
+        .arg("127.0.0.1")
+        .arg("--port")
+        .arg(port.to_string())
+        .arg("--threads")
+        .arg(waitress_threads)
+        .env("DJANGO_DEBUG", django_debug)
+        .env("GEEKS_POS_ALLOW_DB_OVERRIDE", allow_db_override)
+        .env("DJANGO_SECRET_KEY", secret_key)
+        .env("INTERNAL_FLUSH_KEY", flush_key)
+        .env("PYTHONUNBUFFERED", "1")
+        .env("WAITRESS_THREADS", waitress_threads);
+}
+
 /// Live Django from the repo (`run_waitress.py`). Used in dev so `receipt.py` etc. apply without rebuilding PyInstaller.
 fn waitress_python_command(
     script: &Path,
@@ -443,41 +513,62 @@ fn waitress_python_command(
     secret_key: &str,
     flush_key: &str,
 ) -> Command {
+    if let Some(py) = resolve_backend_venv_python(script) {
+        append_log_line(
+            "INFO",
+            &format!("Using backend .venv python: {}", py.display()),
+        );
+        let mut cmd = Command::new(py);
+        attach_waitress_args_and_env(
+            &mut cmd,
+            script,
+            port,
+            waitress_threads,
+            django_debug,
+            allow_db_override,
+            secret_key,
+            flush_key,
+        );
+        return cmd;
+    }
+
     #[cfg(windows)]
     {
+        append_log_line(
+            "WARN",
+            "venv topilmadi (backend/.venv yoki repo ildizidagi .venv) — global `py -3`. Masalan: repo ildizida `python -m venv .venv` yoki `cd backend && python -m venv .venv`, keyin `pip install -r backend/requirements.txt`",
+        );
         let mut cmd = Command::new("py");
-        cmd.arg("-3")
-            .arg(script)
-            .arg("--host")
-            .arg("127.0.0.1")
-            .arg("--port")
-            .arg(port.to_string())
-            .arg("--threads")
-            .arg(waitress_threads)
-            .env("DJANGO_DEBUG", django_debug)
-            .env("GEEKS_POS_ALLOW_DB_OVERRIDE", allow_db_override)
-            .env("DJANGO_SECRET_KEY", secret_key)
-            .env("INTERNAL_FLUSH_KEY", flush_key)
-            .env("PYTHONUNBUFFERED", "1")
-            .env("WAITRESS_THREADS", waitress_threads);
+        cmd.arg("-3");
+        attach_waitress_args_and_env(
+            &mut cmd,
+            script,
+            port,
+            waitress_threads,
+            django_debug,
+            allow_db_override,
+            secret_key,
+            flush_key,
+        );
         cmd
     }
     #[cfg(not(windows))]
     {
+        append_log_line(
+            "WARN",
+            "venv topilmadi (backend/.venv yoki repo ildizidagi .venv) — tizim `python3` ishlatiladi.",
+        );
         let mut cmd = Command::new("python3");
-        cmd.arg(script)
-            .arg("--host")
-            .arg("127.0.0.1")
-            .arg("--port")
-            .arg(port.to_string())
-            .arg("--threads")
-            .arg(waitress_threads)
-            .env("DJANGO_DEBUG", django_debug)
-            .env("GEEKS_POS_ALLOW_DB_OVERRIDE", allow_db_override)
-            .env("DJANGO_SECRET_KEY", secret_key)
-            .env("INTERNAL_FLUSH_KEY", flush_key)
-            .env("PYTHONUNBUFFERED", "1")
-            .env("WAITRESS_THREADS", waitress_threads);
+        attach_waitress_args_and_env(
+            &mut cmd,
+            script,
+            port,
+            waitress_threads,
+            django_debug,
+            allow_db_override,
+            secret_key,
+            flush_key,
+        );
         cmd
     }
 }

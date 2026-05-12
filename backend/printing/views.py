@@ -9,7 +9,7 @@ from core.permissions import IsAdminOrOwner, IsCashier
 from sales.models import Sale
 
 from .models import StoreSettings
-from .receipt import receipt_plain_text, sale_to_receipt_dict
+from .receipt import receipt_plain_text, resolve_receipt_store_lang, sale_to_receipt_dict
 from .services import PrinterFactory
 
 
@@ -232,6 +232,7 @@ class TestReceiptPrintView(APIView):
         import base64
 
         settings = StoreSettings.get_solo()
+        test_lang = resolve_receipt_store_lang(settings, request.headers.get("Accept-Language") or "uz")
         dto = {
             "sale_id": "TEST-RECEIPT",
             "completed_at": "",
@@ -247,7 +248,7 @@ class TestReceiptPrintView(APIView):
                 "footer_note": settings.footer_note or "Сатып алганыңыз үчүн рахмат!",
                 "transliterate_uz": settings.transliterate_uz,
                 "encoding": settings.encoding,
-                "lang": "ky",
+                "lang": test_lang,
                 "receipt_width": settings.receipt_width or "58mm",
                 "receipt_printer_name": settings.receipt_printer_name or "",
                 "receipt_printer_type": settings.receipt_printer_type,

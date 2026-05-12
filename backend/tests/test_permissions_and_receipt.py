@@ -9,7 +9,8 @@ from debt.models import Customer
 from sales.models import Sale
 from sales.services import complete_sale
 from catalog.models import Category, Color, Product, ProductVariant, Size
-from printing.receipt import round_som, transliterate_uz
+from printing.models import StoreSettings
+from printing.receipt import round_som, sale_to_receipt_dict, transliterate_uz
 
 
 def _mk_user(username: str, role: str) -> User:
@@ -239,3 +240,42 @@ def test_receipt_rounding_and_transliteration():
     assert round_som("10.50") == Decimal("11")
     assert transliterate_uz("o‘g‘il bola") == "o'g'il bola"
     assert transliterate_uz("Ғ Ш Ч ў ғ") == "G' Sh Ch o' g'"
+
+
+@pytest.mark.django_db
+def test_sale_receipt_dict_respects_receipt_lang_setting():
+    cashier = _mk_user("cashier_receipt_lang", "CASHIER")
+    variant = _mk_variant()
+    sale = complete_sale(
+        idempotency_key="receipt-lang-sale",
+        cashier=cashier,
+        lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
+        payments=[{"method": "CASH", "amount": "150000.00"}],
+        customer=None,
+    )
+    settings = StoreSettings.get_solo()
+    settings.receipt_lang = "uz"
+    settings.save(update_fields=["receipt_lang"])
+    dto = sale_to_receipt_dict(sale, lang="ru-RU,ru;q=0.9")
+    assert dto["store"]["lang"] == "uz"
+    assert dto["lines"][0]["name"] == "Keta"
+    assert dto["lines"][0]["color"] == "Qora"
+
+    settings.receipt_lang = "ru"
+    settings.save(update_fields=["receipt_lang"])
+    dto_ru = sale_to_receipt_dict(sale, lang="uz")
+    assert dto_ru["store"]["lang"] == "ru"
+    assert dto_ru["lines"][0]["name"] == "Кеды"
+    assert dto_ru["lines"][0]["color"] == "Черный"
+
+    settings.receipt_lang = "ky"
+    settings.save(update_fields=["receipt_lang"])
+    dto_ky = sale_to_receipt_dict(sale, lang="uz")
+    assert dto_ky["store"]["lang"] == "ky"
+    assert dto_ky["lines"][0]["name"] == "Кеды"
+
+    settings.receipt_lang = ""
+    settings.save(update_fields=["receipt_lang"])
+    dto_auto = sale_to_receipt_dict(sale, lang="ru")
+    assert dto_auto["store"]["lang"] == "ru"
+    assert dto_auto["lines"][0]["name"] == "Кеды"

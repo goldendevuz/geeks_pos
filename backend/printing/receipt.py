@@ -15,6 +15,41 @@ def _normalize_lang(lang: str | None) -> str:
     return "ru" if v.startswith("ru") else "uz"
 
 
+def resolve_receipt_store_lang(settings: StoreSettings, request_lang: str | None) -> str:
+    """
+    Chek sarlavha va qator matnlari tili: sozlamadagi receipt_lang (uz|ru|ky),
+    bo'sh bo'lsa — HTTP Accept-Language (UI) bo'yicha _normalize_lang.
+    """
+    raw = (getattr(settings, "receipt_lang", None) or "").strip().lower()
+    if raw in ("uz", "ru", "ky"):
+        return raw
+    if raw.startswith("ky"):
+        return "ky"
+    if raw.startswith("ru"):
+        return "ru"
+    if raw.startswith("uz"):
+        return "uz"
+    return _normalize_lang(request_lang)
+
+
+def _receipt_variant_texts(receipt_lang: str, product, size, color) -> tuple[str, str, str]:
+    """Mahsulot/o'lcham/rang — chek tili bo'yicha; KY uchun DB'da alohida maydon yo'q, RU keyin UZ."""
+    rl = _normalize_lang(receipt_lang)
+    if rl == "uz":
+        name = (getattr(product, "name_uz", None) or getattr(product, "name_ru", None) or "").strip()
+        sz = (getattr(size, "label_uz", None) or getattr(size, "label_ru", None) or "").strip()
+        cl = (getattr(color, "label_uz", None) or getattr(color, "label_ru", None) or "").strip()
+    elif rl == "ru":
+        name = (getattr(product, "name_ru", None) or getattr(product, "name_uz", None) or "").strip()
+        sz = (getattr(size, "label_ru", None) or getattr(size, "label_uz", None) or "").strip()
+        cl = (getattr(color, "label_ru", None) or getattr(color, "label_uz", None) or "").strip()
+    else:
+        name = (getattr(product, "name_ru", None) or getattr(product, "name_uz", None) or "").strip()
+        sz = (getattr(size, "label_ru", None) or getattr(size, "label_uz", None) or "").strip()
+        cl = (getattr(color, "label_ru", None) or getattr(color, "label_uz", None) or "").strip()
+    return _strip_cjk(name), _strip_cjk(sz), _strip_cjk(cl)
+
+
 def _labels(lang: str) -> dict[str, str]:
     normalized = _normalize_lang(lang)
     if normalized == "ru":
@@ -144,15 +179,16 @@ def _wrap_text(text: str, width: int) -> list[str]:
 
 def sale_to_receipt_dict(sale, *, lang: str = "uz") -> dict:
     settings = StoreSettings.get_solo()
+    store_lang = resolve_receipt_store_lang(settings, lang)
     lines_out = []
     for line in sale.lines.select_related("variant__product", "variant__size", "variant__color"):
         v = line.variant
+        nm, sz, cl = _receipt_variant_texts(store_lang, v.product, v.size, v.color)
         lines_out.append(
             {
-                # Receipt is Russian-only by business requirement.
-                "name": _strip_cjk(getattr(v.product, "name_ru", None) or v.product.name_uz or ""),
-                "size": _strip_cjk(getattr(v.size, "label_ru", None) or v.size.label_uz or ""),
-                "color": _strip_cjk(getattr(v.color, "label_ru", None) or v.color.label_uz or ""),
+                "name": nm,
+                "size": sz,
+                "color": cl,
                 "barcode": v.barcode,
                 "qty": line.qty,
                 "unit": _format_amount(line.net_unit_price),
@@ -160,8 +196,6 @@ def sale_to_receipt_dict(sale, *, lang: str = "uz") -> dict:
             }
         )
     pays = [{"method": p.method, "amount": _format_amount(p.amount)} for p in sale.payments.all()]
-    # Fixed receipt labels (Сатуу, Убакыт, ЖАЛПЫ, …): always Kyrgyz. HTTP `lang=` is ignored here.
-    store_label_lang = "ky"
 
     return {
         "store": {
@@ -171,7 +205,7 @@ def sale_to_receipt_dict(sale, *, lang: str = "uz") -> dict:
             "footer_note": settings.footer_note,
             "transliterate_uz": settings.transliterate_uz,
             "encoding": settings.encoding,
-            "lang": store_label_lang,
+            "lang": store_lang,
             "receipt_width": settings.receipt_width or "58mm",
             "receipt_printer_name": settings.receipt_printer_name or "",
             "receipt_printer_type": settings.receipt_printer_type,

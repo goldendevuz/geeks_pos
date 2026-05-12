@@ -35,6 +35,14 @@ class StoreSettingsSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "logo_url", "updated_at"]
 
+    def validate_receipt_lang(self, value):
+        v = (value or "").strip().lower()
+        if not v:
+            return ""
+        if v in ("uz", "ru", "ky"):
+            return v
+        raise serializers.ValidationError("receipt_lang must be uz, ru, ky, or empty for auto.")
+
     def get_logo_url(self, obj):
         if not obj.logo:
             return None

@@ -400,16 +400,17 @@ export function SettingsPage({
                 </div>
                 <div className="space-y-1">
                   <label className="block text-xs text-slate-400">
-                    {t('admin.settings.receiptLanguage', { defaultValue: 'Cheque language' })}
+                    {t('admin.settings.receiptLanguage')}
                   </label>
                   <select
                     className={inputCls}
                     value={form.receipt_lang || ''}
                     onChange={(e) => setForm({ ...form, receipt_lang: e.target.value })}
                   >
-                    <option value="">{t('admin.settings.receiptLanguageAuto', { defaultValue: 'Auto (UI language)' })}</option>
-                    <option value="uz">O‘zbek</option>
-                    <option value="ru">Русский</option>
+                    <option value="">{t('admin.settings.receiptLanguageAuto')}</option>
+                    <option value="uz">{t('admin.settings.receiptLangUz')}</option>
+                    <option value="ru">{t('admin.settings.receiptLangRu')}</option>
+                    <option value="ky">{t('admin.settings.receiptLangKy')}</option>
                   </select>
                 </div>
               </div>
