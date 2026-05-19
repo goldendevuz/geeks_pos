@@ -21,6 +21,7 @@ import { usePosStore, type PayMode, type SuspendedCart } from '../store/posStore
 import { formatMoney } from '../utils/money'
 import { buildCompleteSaleFingerprintInput, hashSaleIdempotencyKey64 } from '../utils/saleFingerprint'
 import { printReceiptWithFallback } from '../utils/printingHub'
+import { requestAdminDataRefresh } from '../utils/adminDataRefresh'
 import { TouchNumpad } from '../components/TouchNumpad'
 import { PinNumpadPanel } from '../components/PinNumpadPanel'
 import { ActionToast } from '../components/ActionToast'
@@ -90,7 +91,7 @@ function calcGrand(subtotal: Decimal, discount: Decimal): Decimal {
 const AFTER_SCAN_FOCUS_KEY = 'pos_after_scan_focus'
 const LOW_STOCK_THRESHOLD = 3
 /** Ignore identical barcode scans within this window (keyboard wedge duplicates). */
-const SCAN_DEBOUNCE_MS = 200
+const SCAN_DEBOUNCE_MS = 520
 
 type NumpadCtx = { kind: 'discount' } | { kind: 'payment'; rowId: string }
 
@@ -113,6 +114,8 @@ export function PosPage({
   /** Bumps after each successful sale so identical cart contents still get a new idempotency key. */
   const idempotencyGenRef = useRef(0)
   const lastScanRef = useRef<{ code: string; at: number } | null>(null)
+  /** Blocks immediate re-add of same barcode until a different sku is scanned. */
+  const scanDupBlockRef = useRef<string | null>(null)
   const [buffer, setBuffer] = useState('')
   const [toast, setToast] = useState<{ kind: 'err' | 'ok'; msg: string; muteSound?: boolean } | null>(null)
   const [banner, setBanner] = useState<string | null>(null)
@@ -249,6 +252,11 @@ export function PosPage({
       }
     }, 50)
   }, [locked, numpadCtx, selectedLine, shouldKeepCurrentFocus, stockMatrix])
+
+  function scanFieldPending(): boolean {
+    const dom = (scanRef.current?.value || '').trim()
+    return Boolean(buffer.trim() || dom)
+  }
 
   useEffect(() => {
     safeRefocus()
@@ -549,6 +557,15 @@ export function PosPage({
   async function handleScanSubmit(code: string) {
     const c = code.trim()
     if (!c) return
+    if (scanDupBlockRef.current && scanDupBlockRef.current !== c) {
+      scanDupBlockRef.current = null
+    }
+    if (scanDupBlockRef.current && scanDupBlockRef.current === c) {
+      showToast('err', t('msg.scanDuplicate'))
+      setBuffer('')
+      safeRefocus()
+      return
+    }
     const now = Date.now()
     const prev = lastScanRef.current
     if (prev && prev.code === c && now - prev.at < SCAN_DEBOUNCE_MS) {
@@ -561,6 +578,7 @@ export function PosPage({
       const v = await fetchVariantByBarcode(c)
       setBuffer('')
       addVariantToCart(v)
+      scanDupBlockRef.current = c
     } catch (e: unknown) {
       beepError()
       setScanFlash(true)
@@ -578,6 +596,10 @@ export function PosPage({
 
   async function doComplete() {
     if (completing || completeInFlightRef.current || cart.length === 0) return
+    if (scanFieldPending()) {
+      safeRefocus()
+      return
+    }
 
     const pays = paymentRows.map((r) => ({ method: r.method, amount: parseSom(r.amount) }))
     const payTotal = pays.reduce((acc, p) => acc.plus(p.amount), new Decimal(0))
@@ -642,6 +664,7 @@ export function PosPage({
       openNewCart()
       showToast('ok', `${t('msg.sale')}: ${res.public_sale_no || res.sale_id}`)
       if (autoPrintOnSale) void tryPrint(res.sale_id as string)
+      requestAdminDataRefresh('sale-complete')
     } catch (e: unknown) {
       beepError()
       const appErr = e instanceof AppError ? e : null
@@ -679,7 +702,12 @@ export function PosPage({
         const normalized = normalizeScanValue(buffer, scannerPrefix, scannerSuffix || '\t')
         setBuffer('')
         if (normalized) void handleScanSubmit(normalized)
-      } else if (cart.length > 0 && !completing && !completeInFlightRef.current) {
+      } else if (
+        cart.length > 0 &&
+        !completing &&
+        !completeInFlightRef.current &&
+        !scanFieldPending()
+      ) {
         void doComplete()
       }
       return
@@ -738,7 +766,12 @@ export function PosPage({
             const normalized = normalizeScanValue(buffer, scannerPrefix, scannerSuffix || '\t')
             setBuffer('')
             if (normalized) void handleScanSubmit(normalized)
-          } else if (cart.length > 0 && !completing && !completeInFlightRef.current) {
+          } else if (
+            cart.length > 0 &&
+            !completing &&
+            !completeInFlightRef.current &&
+            !scanFieldPending()
+          ) {
             void doComplete()
           }
           return

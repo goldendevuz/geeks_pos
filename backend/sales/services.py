@@ -17,6 +17,13 @@ from inventory.services import apply_movement
 from core.audit import log_audit
 
 from .models import Payment, Sale, SaleLine
+from .return_state import remaining_return_line_payloads
+from .refund_utils import (
+    allocate_auto_refunds,
+    apply_sale_refunds,
+    compute_return_amount,
+    validate_manual_refunds,
+)
 
 # UZS/KGS market policy: nearest whole som with HALF_UP.
 QUANT = Decimal("1")
@@ -253,19 +260,48 @@ def _resolve_customer(data: dict[str, Any]) -> Customer:
 
 
 @transaction.atomic
-def void_sale(*, sale: Sale, user: User, reason: str = "") -> Sale:
+def void_sale(*, sale: Sale, user: User, reason: str = "") -> dict[str, Any]:
     if sale.status == Sale.Status.VOIDED:
-        return sale
+        return {
+            "sale": sale,
+            "restocked_lines": [],
+            "return_amount": "0",
+            "refunds": [],
+        }
 
-    sale_lines = SaleLine.objects.select_related("variant").filter(sale=sale)
-    for line in sale_lines:
+    if sale.status != Sale.Status.COMPLETED:
+        raise ValueError("Only completed sales can be voided")
+
+    from .return_state import remaining_return_units_by_sale_ids
+
+    remaining_units = remaining_return_units_by_sale_ids([sale.id]).get(str(sale.id), 0)
+    if remaining_units <= 0:
+        raise ValueError("Sale has no remaining merchandise to void (fully returned)")
+
+    sale_lines = list(SaleLine.objects.select_related("variant").filter(sale=sale))
+    remaining_lines = remaining_return_line_payloads(sale, sale_lines)
+    restocked: list[dict[str, Any]] = []
+
+    for item in remaining_lines:
+        variant_id = str(item["variant_id"])
+        qty = int(item["qty"])
+        variant = ProductVariant.objects.get(pk=variant_id)
         apply_movement(
-            variant=line.variant,
-            qty_delta=line.qty,
+            variant=variant,
+            qty_delta=qty,
             movement_type=InventoryMovement.Type.RETURN,
             user=user,
             ref_sale=sale,
-            note=f"Void sale restock. {reason}".strip(),
+            note=f"Void remaining restock. {reason}".strip(),
+        )
+        restocked.append({"variant_id": variant_id, "qty": qty})
+
+    return_amount = compute_return_amount(sale=sale, lines=remaining_lines) if remaining_lines else Decimal("0")
+    refunds_applied: list[dict[str, str]] = []
+    if return_amount > 0:
+        refund_rows = allocate_auto_refunds(sale=sale, return_amount=return_amount)
+        refunds_applied = apply_sale_refunds(
+            sale=sale, user=user, refunds=refund_rows, reason=f"Void: {reason}".strip()
         )
 
     debt = getattr(sale, "debt_record", None)
@@ -283,13 +319,32 @@ def void_sale(*, sale: Sale, user: User, reason: str = "") -> Sale:
         event_type="sale_voided",
         actor=user.username if user else None,
         entity_id=str(sale.id),
-        payload={"reason": reason},
+        payload={
+            "reason": reason,
+            "restocked_lines": restocked,
+            "return_amount": str(return_amount),
+            "refunds": refunds_applied,
+        },
     )
-    return sale
+    return {
+        "sale": sale,
+        "restocked_lines": restocked,
+        "return_amount": str(return_amount),
+        "refunds": refunds_applied,
+    }
 
 
 @transaction.atomic
-def return_sale_lines(*, sale: Sale, user: User, lines: list[dict[str, Any]], reason: str = "") -> dict[str, Any]:
+def return_sale_lines(
+    *,
+    sale: Sale,
+    user: User,
+    lines: list[dict[str, Any]],
+    reason: str = "",
+    refunds: list[dict[str, Any]] | None = None,
+    auto_refund: bool = True,
+    skip_refund: bool = False,
+) -> dict[str, Any]:
     if sale.status != Sale.Status.COMPLETED:
         raise ValueError("Only completed sales can be partially returned")
     if not lines:
@@ -327,6 +382,19 @@ def return_sale_lines(*, sale: Sale, user: User, lines: list[dict[str, Any]], re
         )
         applied.append({"variant_id": variant_id, "qty": qty})
 
+    return_amount = compute_return_amount(sale=sale, lines=lines)
+    refunds_applied: list[dict[str, str]] = []
+    if not skip_refund and return_amount > 0:
+        if auto_refund or not refunds:
+            refund_rows = allocate_auto_refunds(sale=sale, return_amount=return_amount)
+        else:
+            refund_rows = validate_manual_refunds(
+                sale=sale, return_amount=return_amount, refunds=refunds
+            )
+        refunds_applied = apply_sale_refunds(
+            sale=sale, user=user, refunds=refund_rows, reason=reason
+        )
+
     if reason:
         sale.note = f"{sale.note}\nRETURN: {reason}".strip()
         sale.save(update_fields=["note"])
@@ -334,6 +402,18 @@ def return_sale_lines(*, sale: Sale, user: User, lines: list[dict[str, Any]], re
         event_type="sale_partial_returned",
         actor=user.username if user else None,
         entity_id=str(sale.id),
-        payload={"line_count": len(applied), "reason": reason, "lines": applied},
+        payload={
+            "line_count": len(applied),
+            "reason": reason,
+            "lines": applied,
+            "return_amount": str(return_amount),
+            "refunds": refunds_applied,
+        },
     )
-    return {"sale_id": str(sale.id), "status": sale.status, "lines": applied}
+    return {
+        "sale_id": str(sale.id),
+        "status": sale.status,
+        "lines": applied,
+        "return_amount": str(return_amount),
+        "refunds": refunds_applied,
+    }

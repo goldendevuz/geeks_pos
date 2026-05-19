@@ -97,6 +97,7 @@ INSTALLED_APPS = [
     "sync",
     "reports",
     "integrations",
+    "expenses.apps.ExpensesConfig",
     "licensing.apps.LicensingConfig",
 ]
 

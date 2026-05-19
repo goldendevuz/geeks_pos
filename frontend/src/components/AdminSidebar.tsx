@@ -8,8 +8,9 @@ import {
   Settings,
   LogOut,
   PackageSearch,
-  Printer,
   LineChart,
+  Landmark,
+  RotateCcw,
   type LucideIcon,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -23,22 +24,24 @@ export type Section =
   | 'sales'
   | 'settings'
   | 'stock'
-  | 'printer'
   | 'shift'
+  | 'expenses'
+  | 'returns'
 
 const ITEMS: Array<{ id: Section; labelKey: string; icon: LucideIcon }> = [
   { id: 'dashboard', labelKey: 'admin.sidebar.dashboard', icon: LayoutDashboard },
   { id: 'pos', labelKey: 'admin.sidebar.pos', icon: ShoppingCart },
   { id: 'shift', labelKey: 'admin.sidebar.shift', icon: LineChart },
+  { id: 'expenses', labelKey: 'admin.sidebar.expenses', icon: Landmark },
   { id: 'stock', labelKey: 'admin.sidebar.stock', icon: PackageSearch },
   { id: 'inventory', labelKey: 'admin.sidebar.inventory', icon: Package },
   { id: 'catalog', labelKey: 'admin.sidebar.catalog', icon: Tags },
   { id: 'debts', labelKey: 'admin.sidebar.debts', icon: Wallet },
-  { id: 'printer', labelKey: 'admin.sidebar.printer', icon: Printer },
+  { id: 'returns', labelKey: 'admin.sidebar.returns', icon: RotateCcw },
   { id: 'sales', labelKey: 'admin.sidebar.sales', icon: History },
   { id: 'settings', labelKey: 'admin.sidebar.settings', icon: Settings },
 ]
-const CASHIER_MENU: Section[] = ['pos', 'sales', 'debts', 'shift', 'printer', 'stock']
+const CASHIER_MENU: Section[] = ['pos', 'sales', 'returns', 'debts', 'expenses', 'shift', 'stock']
 
 export function AdminSidebar({
   active,
@@ -60,7 +63,7 @@ export function AdminSidebar({
   return (
     <aside className="fixed inset-y-0 left-0 z-30 w-64 shrink-0 border-r border-slate-800 bg-slate-950 p-3 flex flex-col h-dvh overflow-hidden">
       <div className="text-xs uppercase tracking-wide text-slate-500 px-2 pb-2">{t('admin.sidebar.title')}</div>
-      <nav className="space-y-2 flex-1 min-h-0">
+      <nav className="space-y-2 flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y kiosk-scrollbar py-1 -my-1 pr-1">
         {visibleItems.map((item) => {
           const Icon = item.icon
           const isActive = active === item.id

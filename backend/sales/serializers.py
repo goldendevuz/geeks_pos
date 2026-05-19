@@ -44,6 +44,9 @@ class CompleteSaleSerializer(serializers.Serializer):
 
 class SaleHistorySerializer(serializers.ModelSerializer):
     cashier_username = serializers.CharField(source="cashier.username", read_only=True)
+    return_status = serializers.SerializerMethodField()
+    refund_total = serializers.SerializerMethodField()
+    can_void = serializers.SerializerMethodField()
 
     class Meta:
         model = Sale
@@ -56,7 +59,25 @@ class SaleHistorySerializer(serializers.ModelSerializer):
             "subtotal",
             "discount_total",
             "grand_total",
+            "return_status",
+            "refund_total",
+            "can_void",
         ]
+
+    def _meta_for(self, obj: Sale) -> dict:
+        meta_map = self.context.get("return_meta") or {}
+        return meta_map.get(str(obj.id), {})
+
+    def get_return_status(self, obj: Sale) -> str:
+        return self._meta_for(obj).get("return_status", "none")
+
+    def get_refund_total(self, obj: Sale) -> str:
+        return self._meta_for(obj).get("refund_total", "0")
+
+    def get_can_void(self, obj: Sale) -> bool:
+        if obj.status == Sale.Status.VOIDED:
+            return False
+        return bool(self._meta_for(obj).get("can_void", obj.status == Sale.Status.COMPLETED))
 
 
 class VoidSaleSerializer(serializers.Serializer):
@@ -68,6 +89,14 @@ class ReturnLineSerializer(serializers.Serializer):
     qty = serializers.IntegerField(min_value=1)
 
 
+class RefundLineSerializer(serializers.Serializer):
+    method = serializers.ChoiceField(choices=["CASH", "CARD", "DEBT"])
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+
+
 class SaleReturnSerializer(serializers.Serializer):
     reason = serializers.CharField(required=False, allow_blank=True, default="")
     lines = ReturnLineSerializer(many=True)
+    auto_refund = serializers.BooleanField(required=False, default=True)
+    skip_refund = serializers.BooleanField(required=False, default=False)
+    refunds = RefundLineSerializer(many=True, required=False)

@@ -1,12 +1,17 @@
 import { LayoutDashboard, LogOut, Settings } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { DashboardPeriodFilter } from './DashboardPeriodFilter'
 
 export function AdminTopNavbar({
   section,
   onLogout,
+  dashboardFilter,
+  onDashboardFilter,
 }: {
   section: 'dashboard' | 'settings'
   onLogout: () => void
+  dashboardFilter?: { from?: string; to?: string; year?: string }
+  onDashboardFilter?: (from?: string, to?: string, year?: string) => void
 }) {
   const { t } = useTranslation()
   return (
@@ -21,14 +26,19 @@ export function AdminTopNavbar({
           </div>
         </div>
       </div>
-      <button
-        type="button"
-        className="touch-btn inline-flex items-center gap-2 text-sm px-4 py-2 rounded-xl bg-slate-800 border border-slate-600 text-slate-200"
-        onClick={onLogout}
-      >
-        <LogOut className="h-4 w-4" />
-        {t('header.logout')}
-      </button>
+      <div className="flex items-center gap-2 flex-wrap justify-end">
+        {section === 'dashboard' && onDashboardFilter && dashboardFilter && (
+          <DashboardPeriodFilter filter={dashboardFilter} onFilter={onDashboardFilter} />
+        )}
+        <button
+          type="button"
+          className="touch-btn inline-flex items-center gap-2 text-sm px-4 py-2 rounded-xl bg-slate-800 border border-slate-600 text-slate-200"
+          onClick={onLogout}
+        >
+          <LogOut className="h-4 w-4" />
+          {t('header.logout')}
+        </button>
+      </div>
     </header>
   )
 }

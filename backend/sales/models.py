@@ -67,3 +67,32 @@ class Payment(models.Model):
     sale = models.ForeignKey(Sale, on_delete=models.CASCADE, related_name="payments")
     method = models.CharField(max_length=16, choices=Method.choices)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
+
+
+class SaleRefund(models.Model):
+    """Pul qaytarish: vozvrat operatsiyasida kassadan chiqim / qarz kamaytirish."""
+
+    class Method(models.TextChoices):
+        CASH = "CASH", "Cash"
+        CARD = "CARD", "Card"
+        DEBT = "DEBT", "Debt"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    sale = models.ForeignKey(Sale, on_delete=models.PROTECT, related_name="refunds")
+    method = models.CharField(max_length=16, choices=Method.choices)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="sale_refunds",
+    )
+    reason = models.CharField(max_length=500, blank=True, default="")
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["created_at"]),
+            models.Index(fields=["sale", "created_at"]),
+            models.Index(fields=["method", "created_at"]),
+        ]

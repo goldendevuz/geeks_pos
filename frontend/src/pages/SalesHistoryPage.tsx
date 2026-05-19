@@ -2,9 +2,104 @@ import type { SaleHistoryRow } from '../api'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { List, type RowComponentProps } from 'react-window'
-import { formatMoney } from '../utils/money'
+import { formatMoney, netMoney, toIntAmount } from '../utils/money'
 import { ActionToast } from '../components/ActionToast'
 import { playUiSound } from '../utils/uiSound'
+
+function showVoidButton(s: SaleHistoryRow, canVoid: boolean) {
+  return canVoid && s.status !== 'VOIDED' && (s.can_void ?? true)
+}
+
+function StatusBadges({
+  s,
+  t,
+}: {
+  s: SaleHistoryRow
+  t: (key: string, opts?: { defaultValue?: string }) => string
+}) {
+  const statusClass =
+    s.status === 'VOIDED'
+      ? 'bg-red-950/60 text-red-200 border-red-800/80'
+      : 'bg-emerald-950/50 text-emerald-200 border-emerald-800/70'
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      <span className={`inline-block px-2 py-0.5 rounded-md text-xs border ${statusClass}`}>
+        {t(`status.${s.status}`, { defaultValue: s.status })}
+      </span>
+      {s.return_status === 'partial' && (
+        <span className="inline-block px-2 py-0.5 rounded-md text-xs border border-amber-700/80 bg-amber-950/50 text-amber-200">
+          {t('admin.sales.badgePartial')}
+        </span>
+      )}
+      {s.return_status === 'full' && (
+        <span className="inline-block px-2 py-0.5 rounded-md text-xs border border-sky-700/80 bg-sky-950/50 text-sky-200">
+          {t('admin.sales.badgeFull')}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function SaleRowActions({
+  s,
+  canVoid,
+  t,
+  onReprint,
+  onVoidClick,
+  setActionToast,
+  compact,
+}: {
+  s: SaleHistoryRow
+  canVoid: boolean
+  t: (key: string, opts?: { defaultValue?: string }) => string
+  onReprint: (saleId: string) => Promise<void>
+  onVoidClick: () => void
+  setActionToast: (v: { kind: 'ok' | 'err'; message: string }) => void
+  compact?: boolean
+}) {
+  const btn = compact ? 'touch-btn min-h-10 px-3 rounded-xl text-sm font-medium' : 'touch-btn min-h-12 px-3 rounded-xl text-sm font-medium'
+  return (
+    <div className="inline-flex flex-col items-end gap-1">
+      <div className="inline-flex items-center gap-2">
+        <button
+          type="button"
+          className={`${btn} bg-slate-800 border border-slate-600`}
+          onClick={async () => {
+            try {
+              await onReprint(s.id)
+              setActionToast({ kind: 'ok', message: t('admin.sales.reprintSuccess') })
+            } catch (e: unknown) {
+              const rawMessage = e instanceof Error ? e.message : String(e || '')
+              if (rawMessage.startsWith('Printer ulanmagan:')) {
+                setActionToast({ kind: 'err', message: rawMessage })
+                return
+              }
+              const code = (e as Error & { code?: string }).code
+              setActionToast({
+                kind: 'err',
+                message: t(`err.${code || 'PRINT_FAILED'}`, { defaultValue: t('msg.printFailed') }),
+              })
+            }
+          }}
+        >
+          {t('admin.sales.reprint')}
+        </button>
+        {showVoidButton(s, canVoid) && (
+          <button
+            type="button"
+            className={`${btn} bg-red-800 border border-red-600`}
+            onClick={onVoidClick}
+          >
+            {t('admin.sales.void')}
+          </button>
+        )}
+      </div>
+      {canVoid && s.status === 'COMPLETED' && s.can_void === false && (
+        <span className="text-xs text-slate-500 max-w-[14rem] text-right">{t('admin.sales.voidDisabledReturned')}</span>
+      )}
+    </div>
+  )
+}
 
 export function SalesHistoryPage({
   sales,
@@ -31,7 +126,8 @@ export function SalesHistoryPage({
   canExport?: boolean
   isCashier?: boolean
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const dateLocale = i18n.language.startsWith('ru') ? 'ru-RU' : 'uz-UZ'
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [query, setQuery] = useState('')
@@ -89,7 +185,7 @@ export function SalesHistoryPage({
               }
             }}
           >
-            {exportBusy ? t('admin.common.loading') : t('admin.sales.exportCsv')}
+            {exportBusy ? t('admin.common.loading') : t('admin.sales.exportExcel')}
           </button>
         )}
         <button
@@ -106,9 +202,7 @@ export function SalesHistoryPage({
       </div>
       <p className="text-xs text-slate-400">{t('admin.sales.hint')}</p>
       {isCashier && !from && !to && (
-        <p className="text-xs text-amber-400">
-          {t('admin.sales.cashierDefaultToday', { defaultValue: "Cashier uchun sukut bo'yicha bugungi sotuvlar ko'rsatiladi." })}
-        </p>
+        <p className="text-xs text-amber-400">{t('admin.sales.cashierDefaultToday')}</p>
       )}
       <div className="rounded border border-slate-700 overflow-hidden">
         <table className="w-full text-sm">
@@ -118,7 +212,8 @@ export function SalesHistoryPage({
               <th className="text-left p-2">{t('admin.sales.cashier')}</th>
               <th className="text-left p-2">{t('admin.sales.time')}</th>
               <th className="text-left p-2">{t('admin.sales.status')}</th>
-              <th className="text-right p-2">{t('admin.sales.total')}</th>
+              <th className="text-right p-2">{t('admin.sales.grossTotal')}</th>
+              <th className="text-right p-2">{t('admin.sales.netTotal')}</th>
               <th className="text-right p-2">{t('admin.sales.action')}</th>
             </tr>
           </thead>
@@ -128,48 +223,32 @@ export function SalesHistoryPage({
               <tr key={s.id} className="border-t border-slate-800">
                 <td className="p-2">{s.public_sale_no || s.id.slice(0, 8)}</td>
                 <td className="p-2">{s.cashier_username}</td>
-                <td className="p-2">{new Date(s.completed_at).toLocaleString()}</td>
-                <td className="p-2">{t(`status.${s.status}`, { defaultValue: s.status })}</td>
-                <td className="p-2 text-right">{formatMoney(s.grand_total)}</td>
+                <td className="p-2 whitespace-nowrap">{new Date(s.completed_at).toLocaleString(dateLocale)}</td>
+                <td className="p-2">
+                  <StatusBadges s={s} t={t} />
+                  {toIntAmount(s.refund_total) > 0 && (
+                    <div className="text-xs text-amber-400/90 mt-1">
+                      {t('admin.sales.refundTotal', { amount: formatMoney(s.refund_total) })}
+                    </div>
+                  )}
+                </td>
+                <td className="p-2 text-right tabular-nums">{formatMoney(s.grand_total)}</td>
+                <td className="p-2 text-right tabular-nums font-medium">{netMoney(s.grand_total, s.refund_total)}</td>
                 <td className="p-2 text-right">
-                  <div className="inline-flex items-center gap-2">
-                    <button
-                      type="button"
-                      className="touch-btn min-h-12 px-3 rounded-xl bg-slate-800 border border-slate-600 text-sm font-medium"
-                      onClick={async () => {
-                        try {
-                          await onReprint(s.id)
-                          setActionToast({ kind: 'ok', message: t('admin.sales.reprintSuccess') })
-                        } catch (e: unknown) {
-                          const rawMessage = e instanceof Error ? e.message : String(e || '')
-                          if (rawMessage.startsWith('Printer ulanmagan:')) {
-                            setActionToast({ kind: 'err', message: rawMessage })
-                            return
-                          }
-                          const code = (e as Error & { code?: string }).code
-                          const message = t(`err.${code || 'PRINT_FAILED'}`, { defaultValue: t('msg.printFailed') })
-                          setActionToast({ kind: 'err', message })
-                        }
-                      }}
-                    >
-                      {t('admin.sales.reprint')}
-                    </button>
-                    {canVoid && s.status !== 'VOIDED' && (
-                      <button
-                        type="button"
-                        className="touch-btn min-h-12 px-3 rounded-xl bg-red-800 border border-red-600 text-sm font-medium"
-                        onClick={() => setVoiding(s)}
-                      >
-                        {t('admin.sales.void')}
-                      </button>
-                    )}
-                  </div>
+                  <SaleRowActions
+                    s={s}
+                    canVoid={canVoid}
+                    t={t}
+                    onReprint={onReprint}
+                    onVoidClick={() => setVoiding(s)}
+                    setActionToast={setActionToast}
+                  />
                 </td>
               </tr>
             ))}
             {sales.length === 0 && (
               <tr>
-                <td colSpan={6} className="p-6 text-center text-slate-500">
+                <td colSpan={7} className="p-6 text-center text-slate-500">
                   {t('admin.sales.empty')}
                 </td>
               </tr>
@@ -186,45 +265,28 @@ export function SalesHistoryPage({
             rowComponent={({ index, style, rows }: RowComponentProps<{ rows: SaleHistoryRow[] }>) => {
               const s = rows[index]
               return (
-                <div style={style} className="grid grid-cols-[1.1fr_1fr_1.2fr_0.9fr_0.8fr_1.7fr] items-center border-b border-slate-800 px-2 text-sm">
+                <div
+                  style={style}
+                  className="grid grid-cols-[1fr_1fr_1.1fr_1.2fr_0.75fr_0.75fr_1.4fr] items-center border-b border-slate-800 px-2 text-sm gap-1"
+                >
                   <div>{s.public_sale_no || s.id.slice(0, 8)}</div>
                   <div>{s.cashier_username}</div>
-                  <div>{new Date(s.completed_at).toLocaleString()}</div>
-                  <div>{t(`status.${s.status}`, { defaultValue: s.status })}</div>
-                  <div className="text-right">{formatMoney(s.grand_total)}</div>
+                  <div className="text-xs">{new Date(s.completed_at).toLocaleString(dateLocale)}</div>
+                  <div>
+                    <StatusBadges s={s} t={t} />
+                  </div>
+                  <div className="text-right tabular-nums">{formatMoney(s.grand_total)}</div>
+                  <div className="text-right tabular-nums font-medium">{netMoney(s.grand_total, s.refund_total)}</div>
                   <div className="text-right">
-                    <div className="inline-flex items-center gap-2">
-                      <button
-                        type="button"
-                        className="touch-btn min-h-10 px-3 rounded-xl bg-slate-800 border border-slate-600 text-sm font-medium"
-                        onClick={async () => {
-                          try {
-                            await onReprint(s.id)
-                            setActionToast({ kind: 'ok', message: t('admin.sales.reprintSuccess') })
-                          } catch (e: unknown) {
-                            const rawMessage = e instanceof Error ? e.message : String(e || '')
-                            if (rawMessage.startsWith('Printer ulanmagan:')) {
-                              setActionToast({ kind: 'err', message: rawMessage })
-                              return
-                            }
-                            const code = (e as Error & { code?: string }).code
-                            const message = t(`err.${code || 'PRINT_FAILED'}`, { defaultValue: t('msg.printFailed') })
-                            setActionToast({ kind: 'err', message })
-                          }
-                        }}
-                      >
-                        {t('admin.sales.reprint')}
-                      </button>
-                      {canVoid && s.status !== 'VOIDED' && (
-                        <button
-                          type="button"
-                          className="touch-btn min-h-10 px-3 rounded-xl bg-red-800 border border-red-600 text-sm font-medium"
-                          onClick={() => setVoiding(s)}
-                        >
-                          {t('admin.sales.void')}
-                        </button>
-                      )}
-                    </div>
+                    <SaleRowActions
+                      s={s}
+                      canVoid={canVoid}
+                      t={t}
+                      onReprint={onReprint}
+                      onVoidClick={() => setVoiding(s)}
+                      setActionToast={setActionToast}
+                      compact
+                    />
                   </div>
                 </div>
               )

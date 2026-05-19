@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
@@ -63,11 +63,17 @@ import {
 } from './api'
 import { AdminSidebar } from './components/AdminSidebar'
 import { AdminTopNavbar } from './components/AdminTopNavbar'
+import { BootScreen } from './components/BootScreen'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { ActivationPage } from './pages/ActivationPage'
 import { LoginPage } from './pages/LoginPage'
 import { PosPage } from './pages/PosPage'
 import { dispatchLabel, printReceiptWithFallback } from './utils/printingHub'
+import {
+  GEEKS_REFRESH_ADMIN_EVENT,
+  requestAdminDataRefresh,
+  type AdminRefreshDetail,
+} from './utils/adminDataRefresh'
 
 const DEFAULT_LICENSE_OK: LicenseStatus = {
   enforcement: false,
@@ -106,13 +112,17 @@ const CashStockPage = lazy(async () => {
   const mod = await import('./pages/CashStockPage')
   return { default: mod.CashStockPage }
 })
-const PrinterQuickPage = lazy(async () => {
-  const mod = await import('./pages/PrinterQuickPage')
-  return { default: mod.PrinterQuickPage }
-})
 const ShiftXReportPage = lazy(async () => {
   const mod = await import('./pages/ShiftXReportPage')
   return { default: mod.ShiftXReportPage }
+})
+const ExpensesPage = lazy(async () => {
+  const mod = await import('./pages/ExpensesPage')
+  return { default: mod.ExpensesPage }
+})
+const ReturnSalePage = lazy(async () => {
+  const mod = await import('./pages/ReturnSalePage')
+  return { default: mod.ReturnSalePage }
 })
 
 export default function App() {
@@ -124,7 +134,13 @@ export default function App() {
   const [salesFilter, setSalesFilter] = useState<{ from?: string; to?: string; q?: string; page: number }>({
     page: 1,
   })
-  const [catalogFilter, setCatalogFilter] = useState<{ q?: string; page: number }>({ page: 1 })
+  const [catalogFilter, setCatalogFilter] = useState<{
+    q?: string
+    page: number
+    ordering?: 'name' | 'recent'
+    category_id?: string
+    product_id?: string
+  }>({ page: 1, ordering: 'name' })
 
   const [categories, setCategories] = useState<Category[]>([])
   const [products, setProducts] = useState<Product[]>([])
@@ -153,6 +169,48 @@ export default function App() {
   const [hasSaleInProgress, setHasSaleInProgress] = useState(false)
   const [showExitConfirm, setShowExitConfirm] = useState(false)
   const isManager = role === 'ADMIN' || role === 'OWNER'
+  const dashboardFilterRef = useRef(dashboardFilter)
+  dashboardFilterRef.current = dashboardFilter
+
+  const onFilterSales = useCallback((from: string, to: string, q: string) => {
+    setSalesFilter((prev) =>
+      prev.from === from && prev.to === to && prev.q === q ? prev : { from, to, q, page: 1 },
+    )
+  }, [])
+
+  const onSalesPageStable = useCallback((page: number) => {
+    setSalesFilter((p) => (p.page === page ? p : { ...p, page }))
+  }, [])
+
+  /** Debounced catalog search → stable ref so pagination is not reset on parent re-render. */
+  const onCatalogQueryChange = useCallback((q: string) => {
+    const norm = q.trim() ? q.trim() : undefined
+    setCatalogFilter((prev) => {
+      const prevNorm = prev.q?.trim()
+      const nextNorm = norm
+      if (prevNorm === nextNorm || (!prevNorm && !nextNorm)) return prev
+      return { ...prev, q: norm, page: 1 }
+    })
+  }, [])
+
+  const onCatalogFacetsChange = useCallback(
+    (facets: { ordering?: 'name' | 'recent'; category_id?: string; product_id?: string }) => {
+      setCatalogFilter((prev) => ({
+        ...prev,
+        ...(facets.ordering !== undefined ? { ordering: facets.ordering } : {}),
+        ...(facets.category_id !== undefined
+          ? { category_id: facets.category_id || undefined, product_id: undefined }
+          : {}),
+        ...(facets.product_id !== undefined ? { product_id: facets.product_id || undefined } : {}),
+        page: 1,
+      }))
+    },
+    [],
+  )
+
+  const onCatalogPageStable = useCallback((page: number) => {
+    setCatalogFilter((p) => (p.page === page ? p : { ...p, page }))
+  }, [])
 
   useEffect(() => {
     function onSaleProgress(event: Event) {
@@ -221,6 +279,17 @@ export default function App() {
     resetLocalSession()
   }
 
+  /** Faqat boshqaruv paneli uchun — katalog/ro‘yxatlarni majburiy qayta tortmasdan KPI yangilash */
+  const refreshDashboardSummaryOnly = useCallback(async () => {
+    if (!authed || !isManager) return
+    try {
+      const next = await fetchDashboardSummary(dashboardFilterRef.current)
+      setDashboardSummary(next)
+    } catch {
+      /* ignore */
+    }
+  }, [authed, isManager])
+
   async function refreshAdminData() {
     if (role === 'CASHIER') {
       try {
@@ -242,6 +311,9 @@ export default function App() {
         includeDeleted,
         q: catalogFilter.q,
         page: catalogFilter.page,
+        ordering: catalogFilter.ordering,
+        category_id: catalogFilter.category_id,
+        product_id: catalogFilter.product_id,
       }),
       fetchOpenDebts(),
       fetchSalesHistory(salesFilter),
@@ -260,6 +332,41 @@ export default function App() {
     if (results[8].status === 'fulfilled') setDashboardSummary(results[8].value)
     if (results[9].status === 'fulfilled') setIntegrationSettings(results[9].value)
   }
+
+  const refreshAdminDataRef = useRef(refreshAdminData)
+  refreshAdminDataRef.current = refreshAdminData
+
+  useEffect(() => {
+    if (!authed) return
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<AdminRefreshDetail>).detail
+      void (async () => {
+        try {
+          await refreshAdminDataRef.current()
+        } finally {
+          detail?.resolve?.()
+        }
+      })()
+    }
+    window.addEventListener(GEEKS_REFRESH_ADMIN_EVENT, handler)
+    return () => window.removeEventListener(GEEKS_REFRESH_ADMIN_EVENT, handler)
+  }, [authed])
+
+  /** Boshqa tab/terminalda moliya o‘zgarsa ham dashboard taxminan yangilanadi */
+  useEffect(() => {
+    if (!authed || !isManager) return
+    const id = window.setInterval(() => void refreshDashboardSummaryOnly(), 45_000)
+    return () => clearInterval(id)
+  }, [authed, isManager, refreshDashboardSummaryOnly])
+
+  useEffect(() => {
+    if (!authed || !isManager) return
+    function onVisibility() {
+      if (document.visibilityState === 'visible') void refreshDashboardSummaryOnly()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [authed, isManager, refreshDashboardSummaryOnly])
 
   useEffect(() => {
     ;(async () => {
@@ -294,6 +401,9 @@ export default function App() {
     salesFilter.q,
     catalogFilter.page,
     catalogFilter.q,
+    catalogFilter.ordering,
+    catalogFilter.category_id,
+    catalogFilter.product_id,
     dashboardFilter.from,
     dashboardFilter.to,
     dashboardFilter.year,
@@ -315,10 +425,11 @@ export default function App() {
               byVariant.has(v.id) ? { ...v, stock_qty: byVariant.get(v.id) ?? v.stock_qty } : v,
             ),
           }))
-          // Debt sales are created from POS; keep admin debts list in sync without manual refresh.
-          if ((isManager || role === 'CASHIER') && events.some((e) => e.type === 'SALE' || e.type === 'RETURN')) {
-            const nextDebts = await fetchOpenDebts()
-            setDebts(nextDebts)
+          if (
+            (isManager || role === 'CASHIER') &&
+            events.some((e) => e.type === 'SALE' || e.type === 'RETURN' || e.type === 'ADJUST' || e.type === 'IN')
+          ) {
+            requestAdminDataRefresh('stock-events')
           }
         } catch {
           // ignore stock sync errors
@@ -349,8 +460,8 @@ export default function App() {
     return () => window.clearInterval(id)
   }, [authed])
 
-  if (booting) return <div className="min-h-screen bg-slate-950 text-slate-100 p-6">{t('admin.common.loading')}</div>
-  if (authed && !role) return <div className="min-h-screen bg-slate-950 text-slate-100 p-6">{t('admin.common.loading')}</div>
+  if (booting) return <BootScreen stage="app_loading" />
+  if (authed && !role) return <BootScreen stage="app_loading" />
 
   if (!authed) {
     return (
@@ -421,6 +532,7 @@ export default function App() {
                 dashboardFilter={dashboardFilter}
                 integrationSettings={integrationSettings}
                 stocktake={stocktake}
+                onDashboardSectionVisible={refreshDashboardSummaryOnly}
                 onCreateVariantBulk={async (payload) => {
                   const out = await createVariantBulkGrid(payload)
                   await refreshAdminData()
@@ -491,10 +603,14 @@ export default function App() {
                   await updateStoreSettings(data)
                   await refreshAdminData()
                 }}
-                onFilterSales={(from, to, q) => setSalesFilter({ from, to, q, page: 1 })}
-                onSalesPage={(page) => setSalesFilter((p) => ({ ...p, page }))}
-                onCatalogFilter={(q) => setCatalogFilter({ q, page: 1 })}
-                onCatalogPage={(page) => setCatalogFilter((p) => ({ ...p, page }))}
+                onFilterSales={onFilterSales}
+                onSalesPage={onSalesPageStable}
+                onCatalogFilter={onCatalogQueryChange}
+                onCatalogFacetsChange={onCatalogFacetsChange}
+                catalogOrdering={catalogFilter.ordering ?? 'name'}
+                catalogCategoryId={catalogFilter.category_id ?? ''}
+                catalogProductId={catalogFilter.product_id ?? ''}
+                onCatalogPage={onCatalogPageStable}
                 salesPage={salesFilter.page}
                 onExportSales={async () => {
                   await exportSalesXlsx({ from: salesFilter.from, to: salesFilter.to })
@@ -585,6 +701,8 @@ export default function App() {
 
 function AdminPanel(props: {
   role: UserRole | null
+  /** Dashboard bo‘limi ko‘rinishi — moliyaviy KPI ni qisman yangilash */
+  onDashboardSectionVisible?: () => void
   onLogout: () => void
   debts: DebtRow[]
   sales: Paginated<SaleHistoryRow>
@@ -643,7 +761,15 @@ function AdminPanel(props: {
   onFilterSales: (from: string, to: string, q: string) => void
   onSalesPage: (page: number) => void
   onCatalogFilter: (q: string) => void
+  onCatalogFacetsChange: (facets: {
+    ordering?: 'name' | 'recent'
+    category_id?: string
+    product_id?: string
+  }) => void
   onCatalogPage: (page: number) => void
+  catalogOrdering: 'name' | 'recent'
+  catalogCategoryId: string
+  catalogProductId: string
   onExportSales: () => Promise<void>
   salesPage: number
   onVoidSale: (saleId: string, reason: string) => Promise<void>
@@ -676,10 +802,11 @@ function AdminPanel(props: {
       'inventory',
       'debts',
       'sales',
+      'returns',
       'settings',
       'stock',
-      'printer',
       'shift',
+      'expenses',
     ] as const
   ).includes(path as never)
     ? (path as
@@ -689,12 +816,18 @@ function AdminPanel(props: {
         | 'inventory'
         | 'debts'
         | 'sales'
+        | 'returns'
         | 'settings'
         | 'stock'
-        | 'printer'
-        | 'shift')
+        | 'shift'
+        | 'expenses')
     : 'dashboard'
   const isCashier = props.role === 'CASHIER'
+
+  useEffect(() => {
+    if (active !== 'dashboard' || isCashier) return
+    props.onDashboardSectionVisible?.()
+  }, [active, isCashier, props.onDashboardSectionVisible])
 
   async function handleAdminLogout() {
     try {
@@ -719,7 +852,12 @@ function AdminPanel(props: {
       />
       <main className="ml-64 flex-1 min-w-0">
         {(active === 'dashboard' || active === 'settings') && (
-          <AdminTopNavbar section={active} onLogout={handleAdminLogout} />
+          <AdminTopNavbar
+            section={active}
+            onLogout={handleAdminLogout}
+            dashboardFilter={active === 'dashboard' ? props.dashboardFilter : undefined}
+            onDashboardFilter={active === 'dashboard' ? props.onFilterDashboard : undefined}
+          />
         )}
         <Suspense fallback={routeFallback}>
         <Routes>
@@ -752,6 +890,10 @@ function AdminPanel(props: {
                 onUpdateVariant={props.onUpdateVariant}
                 onDeleteVariant={props.onDeleteVariant}
                 onFilter={props.onCatalogFilter}
+                onFacetsChange={props.onCatalogFacetsChange}
+                ordering={props.catalogOrdering}
+                categoryId={props.catalogCategoryId}
+                productId={props.catalogProductId}
                 onPage={props.onCatalogPage}
               />
             }
@@ -777,9 +919,11 @@ function AdminPanel(props: {
               />
             }
           />
-          <Route path="stock" element={<CashStockPage />} />
-          <Route path="printer" element={<PrinterQuickPage />} />
+          <Route path="stock" element={<CashStockPage role={props.role} />} />
+          <Route path="printer" element={isCashier ? <Navigate to="/admin/sales" replace /> : <Navigate to="/admin/settings" replace />} />
           <Route path="shift" element={<ShiftXReportPage />} />
+          <Route path="expenses" element={<ExpensesPage />} />
+          <Route path="returns" element={<ReturnSalePage />} />
           <Route
             path="sales"
             element={
@@ -792,7 +936,7 @@ function AdminPanel(props: {
                 onExport={props.onExportSales}
                 onVoid={props.onVoidSale}
                 onReprint={props.onReprintSale}
-                canVoid={!isCashier}
+                canVoid
                 canExport={!isCashier}
                 isCashier={isCashier}
               />

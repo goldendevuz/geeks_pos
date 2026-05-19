@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { List, type RowComponentProps } from 'react-window'
 import type { BulkGridCell, Category, Color, LabelStickerSize, Product, Size, Variant } from '../api'
+import { fetchVariants } from '../api'
 import { useTranslation } from 'react-i18next'
 import { formatMoney } from '../utils/money'
 import { TouchNumpad } from '../components/TouchNumpad'
@@ -87,6 +88,10 @@ export function CatalogPage({
   onDeleteVariant,
   onFilter,
   onPage,
+  ordering,
+  categoryId,
+  productId,
+  onFacetsChange,
 }: {
   categories: Category[]
   products: Product[]
@@ -118,6 +123,14 @@ export function CatalogPage({
   onDeleteVariant: (variantId: string) => Promise<void>
   onFilter: (q: string) => void
   onPage: (page: number) => void
+  ordering: 'name' | 'recent'
+  categoryId: string
+  productId: string
+  onFacetsChange: (facets: {
+    ordering?: 'name' | 'recent'
+    category_id?: string
+    product_id?: string
+  }) => void
 }) {
   const { t, i18n } = useTranslation()
   const [form, setForm] = useState<WizardVariantForm>({
@@ -163,6 +176,7 @@ export function CatalogPage({
   const [addToPrintQueue, setAddToPrintQueue] = useState(true)
   const [bulkStickerPrompt, setBulkStickerPrompt] = useState<null | { variantIds: string[]; copiesStr: string }>(null)
   const [bulkStickerBusy, setBulkStickerBusy] = useState(false)
+  const [printAllBusy, setPrintAllBusy] = useState(false)
   const [numpadOpen, setNumpadOpen] = useState<null | { field: MatrixField; sizeId: string | 'all' }>(null)
   /** Raw digits when matrix numpad was opened. */
   const [matrixNumpadBaseline, setMatrixNumpadBaseline] = useState('0')
@@ -522,6 +536,46 @@ export function CatalogPage({
     setQueueMap((p) => ({ ...p, [variantId]: Math.max(1, (p[variantId] || 0) + 1) }))
   }
 
+  const productsFilteredByBrand = useMemo(
+    () => (categoryId ? products.filter((p) => p.category === categoryId) : products),
+    [products, categoryId],
+  )
+
+  async function printAllVariantsForSelectedModel() {
+    if (!productId) return
+    setPrintAllBusy(true)
+    try {
+      const data = await fetchVariants({
+        includeDeleted,
+        ordering,
+        ...(categoryId ? { category_id: categoryId } : {}),
+        product_id: productId,
+        page: 1,
+        pageSize: 500,
+      })
+      const rows = data.results.filter((v) => {
+        if (!includeDeleted && v.deleted_at) return false
+        return v.is_active
+      })
+      if (rows.length === 0) {
+        setToast(t('admin.catalog.printAllNothing', { defaultValue: 'Variant topilmadi' }))
+        return
+      }
+      const items = rows.map((v) => ({ variant_id: v.id, copies: 1 }))
+      await onPrintStickerQueue(items, queueSize)
+      setToast(
+        t('admin.catalog.printAllOk', {
+          count: rows.length,
+          defaultValue: `Chop uchun ${rows.length} ta variant jo‘natildi`,
+        }),
+      )
+    } catch {
+      setToast(t('admin.catalog.printAllFail', { defaultValue: 'Chop uchun yuklashda xatolik' }))
+    } finally {
+      setPrintAllBusy(false)
+    }
+  }
+
   return (
     <div className="p-4 space-y-4 relative">
       <div className="flex items-center justify-between">
@@ -569,6 +623,65 @@ export function CatalogPage({
             {t('admin.catalog.showDeleted')}
           </label>
         </div>
+      </div>
+      <div className="flex flex-wrap gap-3 items-end rounded border border-slate-800 bg-slate-950/50 p-3">
+        <label className="text-xs text-slate-400 flex flex-col gap-1">
+          <span>{t('admin.catalog.filterBrand')}</span>
+          <select
+            className="touch-btn min-h-10 px-2 rounded bg-slate-950 border border-slate-700 text-sm text-slate-100 min-w-[8rem]"
+            value={categoryId}
+            onChange={(e) => onFacetsChange({ category_id: e.target.value })}
+          >
+            <option value="">{t('admin.catalog.filterBrandAll')}</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {i18n.language.startsWith('ru') ? c.name_ru || c.name_uz : c.name_uz}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs text-slate-400 flex flex-col gap-1">
+          <span>{t('admin.catalog.filterModel')}</span>
+          <select
+            className="touch-btn min-h-10 px-2 rounded bg-slate-950 border border-slate-700 text-sm text-slate-100 min-w-[10rem]"
+            value={productId}
+            disabled={!categoryId}
+            onChange={(e) => onFacetsChange({ product_id: e.target.value })}
+          >
+            <option value="">
+              {!categoryId ? t('admin.catalog.filterModelPickBrandFirst') : t('admin.catalog.filterModelAll')}
+            </option>
+            {productsFilteredByBrand.map((p) => (
+              <option key={p.id} value={p.id}>
+                {i18n.language.startsWith('ru') ? p.name_ru || p.name_uz : p.name_uz}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs text-slate-400 flex flex-col gap-1">
+          <span>{t('admin.catalog.sortVariants')}</span>
+          <select
+            className="touch-btn min-h-10 px-2 rounded bg-slate-950 border border-slate-700 text-sm text-slate-100"
+            value={ordering}
+            onChange={(e) =>
+              onFacetsChange({
+                ordering: e.target.value === 'recent' ? 'recent' : 'name',
+              })
+            }
+          >
+            <option value="name">{t('admin.catalog.sortByName')}</option>
+            <option value="recent">{t('admin.catalog.sortRecent')}</option>
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={!productId || printAllBusy}
+          className="touch-btn min-h-10 px-3 rounded-lg bg-emerald-900 border border-emerald-700 text-sm disabled:opacity-40"
+          title={t('admin.catalog.printAllTool')}
+          onClick={() => void printAllVariantsForSelectedModel()}
+        >
+          {printAllBusy ? t('admin.common.loading') : t('admin.catalog.printAllModelVariants')}
+        </button>
       </div>
       {toast && <ActionToast kind="info" message={toast} onClose={() => setToast(null)} />}
       <p className="text-xs text-slate-400">{t('admin.catalog.hint')}</p>

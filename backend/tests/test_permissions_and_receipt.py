@@ -4,6 +4,7 @@ from decimal import Decimal
 import pytest
 from django.contrib.auth.models import User
 from django.utils import timezone
+from rest_framework.test import APIClient
 
 from debt.models import Customer
 from sales.models import Sale
@@ -45,7 +46,7 @@ def test_barcode_endpoint_accessible_to_cashier(client):
     assert r.status_code != 403
 
 
-def _mk_variant(stock_qty: int = 10) -> ProductVariant:
+def _mk_variant(stock_qty: int = 10, barcode: str = "") -> ProductVariant:
     cat = Category.objects.create(name_uz="Kiyim", name_ru="Одежда")
     sz = Size.objects.create(value="42", label_uz="42", label_ru="42", sort_order=1)
     col = Color.objects.create(value="BLACK-PERM", label_uz="Qora", label_ru="Черный", sort_order=1)
@@ -57,7 +58,38 @@ def _mk_variant(stock_qty: int = 10) -> ProductVariant:
         purchase_price=Decimal("100000.00"),
         list_price=Decimal("150000.00"),
         stock_qty=stock_qty,
+        barcode=barcode or "",
     )
+
+
+@pytest.mark.django_db
+def test_sale_void_own_allowed_blocked_for_other_cashier():
+    from sales.services import complete_sale
+
+    a = _mk_user("cashier_void_a", "CASHIER")
+    b = _mk_user("cashier_void_b", "CASHIER")
+    variant = _mk_variant()
+    sale_own = complete_sale(
+        idempotency_key="void-own-ok",
+        cashier=a,
+        lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
+        payments=[{"method": "CASH", "amount": "150000.00"}],
+        customer=None,
+    )
+    sale_other = complete_sale(
+        idempotency_key="void-other-block",
+        cashier=b,
+        lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
+        payments=[{"method": "CASH", "amount": "150000.00"}],
+        customer=None,
+    )
+
+    api = APIClient()
+    api.force_authenticate(user=a)
+    ok = api.post(f"/api/sales/{sale_own.id}/void/", data={"reason": "mistake"}, format="json")
+    assert ok.status_code == 200
+    blocked = api.post(f"/api/sales/{sale_other.id}/void/", data={"reason": "no"}, format="json")
+    assert blocked.status_code == 403
 
 
 @pytest.mark.django_db

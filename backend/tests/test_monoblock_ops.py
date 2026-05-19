@@ -4,6 +4,7 @@ from decimal import Decimal
 
 import pytest
 from django.contrib.auth.models import User
+from rest_framework.test import APIClient
 
 from catalog.models import Category, Color, Product, ProductVariant, Size
 
@@ -135,10 +136,12 @@ def test_hardware_config_patch_by_cashier(client):
 
 
 @pytest.mark.django_db
-def test_cashier_stock_list_excludes_purchase_price(client):
+def test_cashier_stock_list_excludes_purchase_price():
     cashier = _mk_user("cashier_stock_list", "CASHIER")
-    client.force_login(cashier)
-    r = client.get("/api/catalog/variants/cashier-stock/")
+    _mk_variant()
+    api = APIClient()
+    api.force_authenticate(user=cashier)
+    r = api.get("/api/catalog/variants/cashier-stock/")
     assert r.status_code == 200
     body = r.json()
     assert "results" in body
@@ -146,6 +149,22 @@ def test_cashier_stock_list_excludes_purchase_price(client):
         row = body["results"][0]
         assert "purchase_price" not in row
         assert "stock_qty" in row
+
+
+@pytest.mark.django_db
+def test_owner_stock_list_includes_purchase_price():
+    owner = _mk_user("owner_stock_list", "OWNER")
+    _mk_variant()
+    api = APIClient()
+    api.force_authenticate(user=owner)
+    r = api.get("/api/catalog/variants/cashier-stock/")
+    assert r.status_code == 200
+    body = r.json()
+    assert "results" in body
+    if body["results"]:
+        row = body["results"][0]
+        assert "purchase_price" in row
+        assert "list_price" in row
 
 
 @pytest.mark.django_db

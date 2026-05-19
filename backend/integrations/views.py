@@ -41,7 +41,7 @@ class IntegrationSettingsView(APIView):
 
 
 class TelegramZReportSendView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [IsAuthenticated, IsCashier]
 
     def post(self, request):
         try:
@@ -52,7 +52,7 @@ class TelegramZReportSendView(APIView):
 
 
 class ZReportSendView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [IsAuthenticated, IsCashier]
 
     def post(self, request):
         try:

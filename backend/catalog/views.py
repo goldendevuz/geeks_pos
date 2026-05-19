@@ -21,6 +21,7 @@ from .serializers import (
     ProductVariantSerializer,
     SizeSerializer,
 )
+from .search import variant_text_search_q
 from .services import bulk_create_variant_grid
 
 
@@ -94,21 +95,16 @@ class CashierStockListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated, IsCashier]
     pagination_class = CatalogPagination
 
+    def get_serializer_context(self):
+        return {**super().get_serializer_context(), "request": self.request}
+
     def get_queryset(self):
         query = (self.request.query_params.get("q") or "").strip()
-        qs = ProductVariant.objects.select_related("product", "size", "color").filter(
-            deleted_at__isnull=True
-        )
+        qs = ProductVariant.objects.select_related(
+            "product", "product__category", "size", "color"
+        ).filter(deleted_at__isnull=True)
         if query:
-            qs = qs.filter(
-                Q(barcode__icontains=query)
-                | Q(product__name_uz__icontains=query)
-                | Q(product__name_ru__icontains=query)
-                | Q(size__label_uz__icontains=query)
-                | Q(size__label_ru__icontains=query)
-                | Q(color__label_uz__icontains=query)
-                | Q(color__label_ru__icontains=query)
-            )
+            qs = qs.filter(variant_text_search_q(query))
         return qs.order_by("product__name_uz", "barcode")
 
 
@@ -121,16 +117,22 @@ class ProductVariantListCreate(generics.ListCreateAPIView):
     def get_queryset(self):
         include_deleted = self.request.query_params.get("include_deleted") == "1"
         query = (self.request.query_params.get("q") or "").strip()
-        qs = ProductVariant.objects.select_related("product", "size", "color")
+        qs = ProductVariant.objects.select_related("product", "product__category", "size", "color")
         if not include_deleted:
             qs = qs.filter(deleted_at__isnull=True)
         if query:
-            qs = qs.filter(
-                Q(barcode__icontains=query)
-                | Q(product__name_uz__icontains=query)
-                | Q(size__label_uz__icontains=query)
-                | Q(color__label_uz__icontains=query)
-            )
+            qs = qs.filter(variant_text_search_q(query))
+
+        cat_id = (self.request.query_params.get("category_id") or "").strip()
+        prod_id = (self.request.query_params.get("product_id") or "").strip()
+        if cat_id:
+            qs = qs.filter(product__category_id=cat_id)
+        if prod_id:
+            qs = qs.filter(product_id=prod_id)
+
+        ordering_param = (self.request.query_params.get("ordering") or "name").strip().lower()
+        if ordering_param == "recent":
+            return qs.order_by("-created_at", "-id")
         return qs.order_by("product__name_uz", "barcode")
 
 
@@ -167,19 +169,9 @@ class PosVariantSearchView(APIView):
             return Response({"results": []})
         limit = min(int(request.query_params.get("limit") or 30), 50)
         qs = (
-            ProductVariant.objects.select_related("product", "size", "color")
+            ProductVariant.objects.select_related("product", "product__category", "size", "color")
             .filter(is_active=True, deleted_at__isnull=True)
-            .filter(
-                Q(barcode__icontains=q)
-                | Q(product__name_uz__icontains=q)
-                | Q(product__name_ru__icontains=q)
-                | Q(size__label_uz__icontains=q)
-                | Q(size__label_ru__icontains=q)
-                | Q(size__value__icontains=q)
-                | Q(color__label_uz__icontains=q)
-                | Q(color__label_ru__icontains=q)
-                | Q(color__value__icontains=q)
-            )
+            .filter(variant_text_search_q(q))
             .order_by("product__name_uz", "barcode")[:limit]
         )
         return Response({"results": PosProductVariantSerializer(qs, many=True).data})

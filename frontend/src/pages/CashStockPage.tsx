@@ -1,18 +1,19 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { CashierStockVariant, Paginated } from '../api'
-import { fetchCashierStockVariants } from '../api'
+import type { CashierStockVariant, Paginated, UserRole, Variant } from '../api'
+import { fetchCashierStockVariants, fetchVariants } from '../api'
 import { formatMoney } from '../utils/money'
 import { ActionToast } from '../components/ActionToast'
 
-export function CashStockPage() {
+export function CashStockPage({ role }: { role: UserRole | null }) {
   const { t, i18n } = useTranslation()
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
   const [page, setPage] = useState(1)
-  const [data, setData] = useState<Paginated<CashierStockVariant> | null>(null)
+  const [data, setData] = useState<Paginated<CashierStockVariant | Variant> | null>(null)
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const showPurchase = role === 'OWNER' || role === 'ADMIN'
 
   useEffect(() => {
     const id = window.setTimeout(() => setDebounced(query.trim()), 300)
@@ -26,7 +27,10 @@ export function CashStockPage() {
   useEffect(() => {
     let cancelled = false
     setBusy(true)
-    void fetchCashierStockVariants({ q: debounced || undefined, page, pageSize: 20 })
+    const load = showPurchase
+      ? fetchVariants({ q: debounced || undefined, page, pageSize: 20, ordering: 'name' })
+      : fetchCashierStockVariants({ q: debounced || undefined, page, pageSize: 20 })
+    void load
       .then((res) => {
         if (!cancelled) setData(res)
       })
@@ -39,12 +43,20 @@ export function CashStockPage() {
     return () => {
       cancelled = true
     }
-  }, [debounced, page, t])
+  }, [debounced, page, showPurchase, t])
 
   const maxPage = data ? Math.max(1, Math.ceil(data.count / 20)) : 1
   const rows = data?.results ?? []
+  const colSpan = showPurchase ? 7 : 6
+  const langRu = i18n.language.startsWith('ru')
 
-  function stockRowClass(v: CashierStockVariant) {
+  function rowBrand(v: CashierStockVariant | Variant): string {
+    const uz = 'category_name_uz' in v ? v.category_name_uz : undefined
+    if (!uz) return '—'
+    return langRu ? v.category_name_ru || uz : uz
+  }
+
+  function stockRowClass(v: CashierStockVariant | Variant) {
     if (!v.is_active) {
       return 'bg-violet-950/30 border-l-[3px] border-violet-500/55 text-slate-400'
     }
@@ -57,7 +69,9 @@ export function CashStockPage() {
   return (
     <div className="p-4 space-y-4">
       <h2 className="text-xl font-semibold">{t('admin.cashier.stockTitle')}</h2>
-      <p className="text-sm text-slate-400">{t('admin.cashier.stockHint')}</p>
+      <p className="text-sm text-slate-400">
+        {showPurchase ? t('admin.cashier.stockHintAdmin') : t('admin.cashier.stockHint')}
+      </p>
       {toast && <ActionToast kind="err" message={toast} onClose={() => setToast(null)} />}
       <input
         className="touch-btn w-full max-w-xl min-h-12 px-3 rounded-xl bg-slate-900 border border-slate-700"
@@ -66,35 +80,43 @@ export function CashStockPage() {
         placeholder={t('admin.catalog.searchPlaceholder')}
       />
       <div className="rounded border border-slate-700 overflow-x-auto kiosk-scrollbar">
-        <table className="w-full text-sm min-w-[48rem]">
+        <table className="w-full text-sm min-w-[56rem]">
           <thead className="bg-slate-900 text-slate-400">
             <tr>
+              <th className="text-left p-2">{t('admin.catalog.brand')}</th>
               <th className="text-left p-2">{t('admin.catalog.product')}</th>
               <th className="text-left p-2">{t('admin.catalog.sizeColor')}</th>
               <th className="text-left p-2">{t('admin.catalog.barcode')}</th>
               <th className="text-right p-2">{t('admin.catalog.stock')}</th>
+              {showPurchase && (
+                <th className="text-right p-2">{t('admin.catalog.purchasePrice')}</th>
+              )}
               <th className="text-right p-2">{t('admin.catalog.price')}</th>
             </tr>
           </thead>
           <tbody>
             {busy && rows.length === 0 ? (
               <tr>
-                <td colSpan={5} className="p-4 text-slate-500">
+                <td colSpan={colSpan} className="p-4 text-slate-500">
                   {t('admin.common.loading')}
                 </td>
               </tr>
             ) : (
               rows.map((v) => (
                 <tr key={v.id} className={`border-t border-slate-800 ${stockRowClass(v)}`}>
+                  <td className="p-2 text-slate-300">{rowBrand(v)}</td>
                   <td className="p-2">
-                    {i18n.language.startsWith('ru') ? v.product_name_ru || v.product_name_uz : v.product_name_uz}
+                    {langRu ? v.product_name_ru || v.product_name_uz : v.product_name_uz}
                   </td>
                   <td className="p-2">
-                    {i18n.language.startsWith('ru') ? v.size_label_ru || v.size_label_uz : v.size_label_uz} /{' '}
-                    {i18n.language.startsWith('ru') ? v.color_label_ru || v.color_label_uz : v.color_label_uz}
+                    {langRu ? v.size_label_ru || v.size_label_uz : v.size_label_uz} /{' '}
+                    {langRu ? v.color_label_ru || v.color_label_uz : v.color_label_uz}
                   </td>
                   <td className="p-2 font-mono text-xs">{v.barcode}</td>
                   <td className="p-2 text-right tabular-nums">{v.stock_qty}</td>
+                  {showPurchase && (
+                    <td className="p-2 text-right tabular-nums">{formatMoney(v.purchase_price)}</td>
+                  )}
                   <td className="p-2 text-right tabular-nums">{formatMoney(v.list_price)}</td>
                 </tr>
               ))

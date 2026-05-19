@@ -86,9 +86,9 @@ class StocktakeSessionDetailView(APIView):
 
     def get(self, request, session_id):
         try:
-            session = StocktakeSession.objects.prefetch_related("lines__variant__product").get(
-                pk=session_id
-            )
+            session = StocktakeSession.objects.prefetch_related(
+                "lines__variant__product__category"
+            ).get(pk=session_id)
         except StocktakeSession.DoesNotExist:
             return Response({"code": "SESSION_NOT_FOUND", "detail": "Stocktake session not found"}, status=404)
         return Response(StocktakeSessionSerializer(session).data)

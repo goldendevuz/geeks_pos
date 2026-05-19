@@ -37,6 +37,8 @@ class ProductSerializer(serializers.ModelSerializer):
 class ProductVariantSerializer(serializers.ModelSerializer):
     product_name_uz = serializers.CharField(source="product.name_uz", read_only=True)
     product_name_ru = serializers.CharField(source="product.name_ru", read_only=True)
+    category_name_uz = serializers.CharField(source="product.category.name_uz", read_only=True)
+    category_name_ru = serializers.CharField(source="product.category.name_ru", read_only=True)
     size_label_uz = serializers.CharField(source="size.label_uz", read_only=True)
     size_label_ru = serializers.CharField(source="size.label_ru", read_only=True)
     color_label_uz = serializers.CharField(source="color.label_uz", read_only=True)
@@ -49,6 +51,8 @@ class ProductVariantSerializer(serializers.ModelSerializer):
             "product",
             "product_name_uz",
             "product_name_ru",
+            "category_name_uz",
+            "category_name_ru",
             "size",
             "size_label_uz",
             "size_label_ru",
@@ -69,11 +73,22 @@ class ProductVariantSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 
+def _stock_row_show_purchase_price(request) -> bool:
+    if not request or not getattr(request, "user", None) or not request.user.is_authenticated:
+        return False
+    from accounts.models import Role
+    from accounts.views import _resolve_role
+
+    return _resolve_role(request.user) in (Role.OWNER, Role.ADMIN)
+
+
 class CashierStockRowSerializer(serializers.ModelSerializer):
-    """Read-only catalog row for cashiers (stock visibility, no purchase_price)."""
+    """Read-only catalog row for stock list; purchase_price only for owner/admin."""
 
     product_name_uz = serializers.CharField(source="product.name_uz", read_only=True)
     product_name_ru = serializers.CharField(source="product.name_ru", read_only=True)
+    category_name_uz = serializers.CharField(source="product.category.name_uz", read_only=True)
+    category_name_ru = serializers.CharField(source="product.category.name_ru", read_only=True)
     size_label_uz = serializers.CharField(source="size.label_uz", read_only=True)
     size_label_ru = serializers.CharField(source="size.label_ru", read_only=True)
     color_label_uz = serializers.CharField(source="color.label_uz", read_only=True)
@@ -86,6 +101,8 @@ class CashierStockRowSerializer(serializers.ModelSerializer):
             "product",
             "product_name_uz",
             "product_name_ru",
+            "category_name_uz",
+            "category_name_ru",
             "size",
             "size_label_uz",
             "size_label_ru",
@@ -94,9 +111,17 @@ class CashierStockRowSerializer(serializers.ModelSerializer):
             "color_label_ru",
             "barcode",
             "list_price",
+            "purchase_price",
             "stock_qty",
             "is_active",
         ]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        if not _stock_row_show_purchase_price(request):
+            data.pop("purchase_price", None)
+        return data
 
 
 class PosProductVariantSerializer(serializers.ModelSerializer):

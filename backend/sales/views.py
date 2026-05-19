@@ -4,9 +4,11 @@ from rest_framework.views import APIView
 from rest_framework import generics
 from rest_framework.pagination import PageNumberPagination
 from django.http import HttpResponse
+from collections import defaultdict
 from django.db.models import Q
 from django.utils import timezone
 from datetime import datetime, time, timedelta
+from decimal import Decimal
 import csv
 from io import BytesIO
 
@@ -18,20 +20,64 @@ from core.exceptions import (
 )
 from core.permissions import IsCashier
 from core.permissions import IsAdminOrOwner
+from catalog.models import ProductVariant
 from printing.receipt import sale_to_receipt_dict
 
+from .models import Payment, Sale, SaleLine
 from .serializers import (
     CompleteSaleSerializer,
     SaleHistorySerializer,
     SaleReturnSerializer,
     VoidSaleSerializer,
 )
+from .refund_utils import refund_capacity_by_method, refunds_already_list
+from .history_meta import build_history_return_meta
+from .return_state import build_return_eligible_lines, remaining_return_units_by_sale_ids
 from .services import complete_sale, return_sale_lines, void_sale
-from .models import Sale
 
 
 def _request_lang(request) -> str:
     return (request.headers.get("Accept-Language") or "uz").split(",")[0]
+
+
+def _return_preview_line_dict(ln: SaleLine) -> dict:
+    """Vozvrat qidiruvi / qatorlar uchun sotilgan pozitsiya (variant + narx)."""
+    v = ln.variant
+    p = v.product
+    cat = getattr(p, "category", None)
+    sz = getattr(v, "size", None)
+    col = getattr(v, "color", None)
+
+    def _safe(obj, uz_attr: str, ru_attr: str) -> tuple[str, str]:
+        if not obj:
+            return ("", "")
+        return (
+            (getattr(obj, uz_attr, None) or "") or "",
+            (getattr(obj, ru_attr, None) or "") or "",
+        )
+
+    cat_uz, cat_ru = _safe(cat, "name_uz", "name_ru")
+    sz_uz, sz_ru = _safe(sz, "label_uz", "label_ru")
+    col_uz, col_ru = _safe(col, "label_uz", "label_ru")
+
+    return {
+        "variant_id": str(v.id),
+        "barcode": v.barcode or "",
+        "category_name_uz": cat_uz,
+        "category_name_ru": cat_ru,
+        "product_name_uz": (getattr(p, "name_uz", None) or "") or "",
+        "product_name_ru": (getattr(p, "name_ru", None) or "") or "",
+        "size_label_uz": sz_uz,
+        "size_label_ru": sz_ru,
+        "color_label_uz": col_uz,
+        "color_label_ru": col_ru,
+        "qty": ln.qty,
+        "list_unit_price": str(ln.list_unit_price),
+        "net_unit_price": str(ln.net_unit_price),
+        "line_discount": str(ln.line_discount),
+        "line_total": str(ln.line_total),
+        "stock_qty": int(v.stock_qty or 0),
+    }
 
 
 def _is_admin_or_owner(user) -> bool:
@@ -181,6 +227,20 @@ class SaleHistoryView(generics.ListAPIView):
             )
         return qs
 
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        sales = list(page) if page is not None else list(queryset)
+        meta = build_history_return_meta(sales)
+        serializer = self.get_serializer(
+            sales,
+            many=True,
+            context={**self.get_serializer_context(), "return_meta": meta},
+        )
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return Response(serializer.data)
+
 
 class SaleHistoryExportCsvView(APIView):
     permission_classes = [IsAuthenticated, IsAdminOrOwner]
@@ -206,6 +266,8 @@ class SaleHistoryExportCsvView(APIView):
                 "sale_id",
                 "public_sale_no",
                 "status",
+                "return_status",
+                "refund_total",
                 "cashier",
                 "completed_at",
                 "subtotal",
@@ -213,12 +275,17 @@ class SaleHistoryExportCsvView(APIView):
                 "grand_total",
             ]
         )
-        for s in qs:
+        sale_list = list(qs)
+        meta = build_history_return_meta(sale_list)
+        for s in sale_list:
+            m = meta.get(str(s.id), {})
             writer.writerow(
                 [
                     str(s.id),
                     s.public_sale_no,
                     s.status,
+                    m.get("return_status", "none"),
+                    m.get("refund_total", "0"),
                     s.cashier.username,
                     s.completed_at.isoformat(),
                     s.subtotal,
@@ -255,6 +322,8 @@ class SaleHistoryExportXlsxView(APIView):
                 "sale_id",
                 "public_sale_no",
                 "status",
+                "return_status",
+                "refund_total",
                 "cashier",
                 "completed_at",
                 "subtotal",
@@ -262,12 +331,17 @@ class SaleHistoryExportXlsxView(APIView):
                 "grand_total",
             ]
         )
-        for s in qs:
+        sale_list = list(qs)
+        meta = build_history_return_meta(sale_list)
+        for s in sale_list:
+            m = meta.get(str(s.id), {})
             ws.append(
                 [
                     str(s.id),
                     s.public_sale_no,
                     s.status,
+                    m.get("return_status", "none"),
+                    float(m.get("refund_total", "0")),
                     s.cashier.username,
                     s.completed_at.isoformat(),
                     float(s.subtotal),
@@ -287,46 +361,201 @@ class SaleHistoryExportXlsxView(APIView):
 
 
 class SaleVoidView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [IsAuthenticated, IsCashier]
 
     def post(self, request, pk):
         try:
-            sale = Sale.objects.prefetch_related("lines").get(pk=pk)
+            sale = (
+                Sale.objects.prefetch_related("lines", "payments", "refunds")
+                .select_related("cashier", "debt_record")
+                .get(pk=pk)
+            )
         except Sale.DoesNotExist:
             return Response({"code": "SALE_NOT_FOUND", "detail": "Sale not found."}, status=404)
+        if not _has_sale_access(request.user, sale):
+            return Response(
+                {"code": "SALE_ACCESS_DENIED", "detail": "You do not have access to this sale."},
+                status=403,
+            )
         ser = VoidSaleSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
-        voided = void_sale(
-            sale=sale,
-            user=request.user,
-            reason=ser.validated_data.get("reason") or "",
-        )
+        try:
+            out = void_sale(
+                sale=sale,
+                user=request.user,
+                reason=ser.validated_data.get("reason") or "",
+            )
+        except ValueError as e:
+            msg = str(e)
+            code = "VOID_NOT_ALLOWED" if "fully returned" in msg.lower() or "no remaining" in msg.lower() else "VOID_FAILED"
+            return Response({"code": code, "detail": msg}, status=400)
+        voided = out["sale"]
         return Response(
             {
                 "sale_id": str(voided.id),
                 "status": voided.status,
                 "note": voided.note,
+                "restocked_lines": out["restocked_lines"],
+                "return_amount": out["return_amount"],
+                "refunds": out["refunds"],
             }
         )
 
 
 class SaleReturnView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [IsAuthenticated, IsCashier]
 
     def post(self, request, pk):
         try:
-            sale = Sale.objects.prefetch_related("lines").get(pk=pk)
+            sale = (
+                Sale.objects.prefetch_related("lines", "payments", "refunds")
+                .select_related("cashier", "debt_record")
+                .get(pk=pk)
+            )
         except Sale.DoesNotExist:
             return Response({"code": "SALE_NOT_FOUND", "detail": "Sale not found."}, status=404)
+        if not _has_sale_access(request.user, sale):
+            return Response(
+                {"code": "SALE_ACCESS_DENIED", "detail": "You do not have access to this sale."},
+                status=403,
+            )
         ser = SaleReturnSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         try:
+            vd = ser.validated_data
             out = return_sale_lines(
                 sale=sale,
                 user=request.user,
-                lines=[dict(x) for x in ser.validated_data["lines"]],
-                reason=ser.validated_data.get("reason") or "",
+                lines=[dict(x) for x in vd["lines"]],
+                reason=vd.get("reason") or "",
+                refunds=[dict(x) for x in vd.get("refunds") or []],
+                auto_refund=vd.get("auto_refund", True),
+                skip_refund=vd.get("skip_refund", False),
             )
             return Response(out)
         except ValueError as e:
-            return Response({"code": "RETURN_FAILED", "detail": str(e)}, status=400)
+            msg = str(e)
+            code = "RETURN_FAILED"
+            if "Refund amounts must equal" in msg:
+                code = "RETURN_REFUND_MISMATCH"
+            elif "exceeds refundable" in msg or "No refundable" in msg:
+                code = "RETURN_REFUND_EXCEEDS"
+            return Response({"code": code, "detail": msg}, status=400)
+
+
+class SaleSearchForReturnView(APIView):
+    """Barcode or text / sale no — yakunlangan savdolarni qidirish (vozvrat uchun)."""
+
+    permission_classes = [IsAuthenticated, IsCashier]
+
+    def get(self, request):
+        q = (request.query_params.get("q") or "").strip()
+        if len(q) < 2:
+            return Response({"results": []})
+        qs = (
+            Sale.objects.filter(status=Sale.Status.COMPLETED)
+            .select_related("cashier")
+            .order_by("-completed_at")
+        )
+        if not _is_admin_or_owner(request.user):
+            qs = qs.filter(cashier=request.user)
+        exact_barcode = ProductVariant.objects.filter(barcode=q, deleted_at__isnull=True).exists()
+        if exact_barcode:
+            qs = qs.filter(lines__variant__barcode=q).distinct()
+        else:
+            qs = qs.filter(
+                Q(public_sale_no__icontains=q)
+                | Q(lines__variant__barcode__icontains=q)
+                | Q(lines__variant__product__name_uz__icontains=q)
+                | Q(lines__variant__product__name_ru__icontains=q)
+                | Q(lines__variant__product__category__name_uz__icontains=q)
+                | Q(lines__variant__product__category__name_ru__icontains=q)
+            ).distinct()
+
+        sale_list = list(qs[:50])
+        sale_ids = [s.id for s in sale_list]
+        remaining_by_sale = remaining_return_units_by_sale_ids(sale_ids)
+        sale_list = [s for s in sale_list if remaining_by_sale.get(str(s.id), 0) > 0][:25]
+        sale_ids = [s.id for s in sale_list]
+        preview_by_sale: dict[str, list[dict]] = defaultdict(list)
+        pay_by_sale: dict[str, list[dict]] = defaultdict(list)
+        if sale_ids:
+            line_qs = (
+                SaleLine.objects.filter(sale_id__in=sale_ids)
+                .select_related("variant__product__category", "variant__color", "variant__size")
+                .order_by("sale_id", "id")
+            )
+            for ln in line_qs:
+                preview_by_sale[str(ln.sale_id)].append(_return_preview_line_dict(ln))
+
+            for pay in Payment.objects.filter(sale_id__in=sale_ids).order_by("id"):
+                pay_by_sale[str(pay.sale_id)].append({"method": pay.method, "amount": str(pay.amount)})
+
+        out = []
+        for s in sale_list:
+            prev = list(preview_by_sale[str(s.id)])
+            if exact_barcode:
+                prev = [x for x in prev if x.get("barcode") == q]
+            out.append(
+                {
+                    "sale_id": str(s.id),
+                    "public_sale_no": s.public_sale_no,
+                    "completed_at": s.completed_at.isoformat(),
+                    "cashier_username": s.cashier.username,
+                    "subtotal": str(s.subtotal),
+                    "discount_total": str(s.discount_total),
+                    "grand_total": str(s.grand_total),
+                    "payments": list(pay_by_sale[str(s.id)]),
+                    "preview_lines": prev,
+                }
+            )
+        return Response({"results": out})
+
+
+class SaleReturnLinesView(APIView):
+    """Savdo satrlari: sotilgan, qaytgan, qoldiq qty (frontend vozvrat formasi uchun)."""
+
+    permission_classes = [IsAuthenticated, IsCashier]
+
+    def get(self, request, pk):
+        try:
+            sale = Sale.objects.prefetch_related(
+                "payments",
+                "refunds",
+                "lines__variant__product__category",
+                "lines__variant__color",
+                "lines__variant__size",
+            ).select_related("cashier", "debt_record").get(pk=pk)
+        except Sale.DoesNotExist:
+            return Response({"code": "SALE_NOT_FOUND", "detail": "Sale not found."}, status=404)
+        if sale.status != Sale.Status.COMPLETED:
+            return Response(
+                {"code": "RETURN_NOT_COMPLETED", "detail": "Only completed sales can be returned."},
+                status=400,
+            )
+        if not _has_sale_access(request.user, sale):
+            return Response(
+                {"code": "SALE_ACCESS_DENIED", "detail": "You do not have access to this sale."},
+                status=403,
+            )
+        all_lines = list(sale.lines.all())
+        rows, return_state, total_remaining_qty = build_return_eligible_lines(sale, all_lines)
+        payments_out = [{"method": p.method, "amount": str(p.amount)} for p in sale.payments.all()]
+        cap = refund_capacity_by_method(sale)
+        return Response(
+            {
+                "sale_id": str(sale.id),
+                "public_sale_no": sale.public_sale_no,
+                "completed_at": sale.completed_at.isoformat(),
+                "cashier_username": sale.cashier.username,
+                "subtotal": str(sale.subtotal),
+                "discount_total": str(sale.discount_total),
+                "grand_total": str(sale.grand_total),
+                "payments": payments_out,
+                "refunds_already": refunds_already_list(sale),
+                "refund_capacity": {k: str(v) for k, v in cap.items()},
+                "return_state": return_state,
+                "total_remaining_qty": total_remaining_qty,
+                "lines": rows,
+            }
+        )

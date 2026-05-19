@@ -1,0 +1,11 @@
+API regression tests (REST_FRAMEWORK defaults to TokenAuthentication in config/settings.py):
+- django.test.Client + force_login() does NOT authenticate DRF Token views; expect 401 unless SessionAuthentication is added.
+- For API assertions use rest_framework.test.APIClient().force_authenticate(user=...) (see test_sales_return_api.py, test_sale_history_return_meta.py, test_z_report_allowed_for_cashier).
+
+When adding new API tests:
+- Prefer APIClient over django.test.Client for /api/* endpoints.
+- Monoblock/permissions tests still using Client: migrate when touching those files.
+
+Other flaky areas to watch:
+- Debounced frontend requests: last-response-wins sequencing (sale return search uses req id pattern).
+- Cashier-scoped APIs: cross-cashier access should remain 403 by design.

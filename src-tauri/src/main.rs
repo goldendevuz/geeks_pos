@@ -679,8 +679,9 @@ fn backend_command(app: &tauri::AppHandle, port: u16) -> Result<Command, String>
     }
 }
 
-fn ensure_backend_started(app: &tauri::AppHandle, state: &BackendState) -> Result<(), String> {
-    append_log_line("INFO", "bootstrap_started");
+/// Spawn backend sidecar if needed. Does not block on health (UI shows boot loader).
+fn spawn_backend_if_needed(app: &tauri::AppHandle, state: &BackendState) -> Result<(), String> {
+    append_log_line("INFO", "bootstrap_spawn_started");
     let selected_port = pick_backend_port(8000);
     if let Ok(mut lock) = state.port.lock() {
         *lock = selected_port;
@@ -701,9 +702,7 @@ fn ensure_backend_started(app: &tauri::AppHandle, state: &BackendState) -> Resul
         if let Some(child) = lock.as_mut() {
             match child.try_wait() {
                 Ok(None) => {
-                    if let Ok(mut g) = state.bootstrap_error.lock() {
-                        *g = None;
-                    }
+                    append_log_line("INFO", "backend_child_already_running");
                     return Ok(());
                 }
                 Ok(Some(_)) => {
@@ -754,6 +753,16 @@ fn ensure_backend_started(app: &tauri::AppHandle, state: &BackendState) -> Resul
         *lock = Some(child);
     }
 
+    append_log_line("INFO", "backend_spawned_deferred_health");
+    Ok(())
+}
+
+fn wait_for_backend_ready(state: &BackendState) -> Result<(), String> {
+    let selected_port = *state
+        .port
+        .lock()
+        .map_err(|_| "Backend port mutex poisoned".to_string())?;
+
     // Wait up to ~35s with fail-fast if child exits.
     for _ in 0..70 {
         if health_ok(selected_port) {
@@ -803,6 +812,11 @@ fn ensure_backend_started(app: &tauri::AppHandle, state: &BackendState) -> Resul
         msg.push_str(&h);
     }
     Err(msg)
+}
+
+fn ensure_backend_started(app: &tauri::AppHandle, state: &BackendState) -> Result<(), String> {
+    spawn_backend_if_needed(app, state)?;
+    wait_for_backend_ready(state)
 }
 
 #[tauri::command]
@@ -1171,22 +1185,12 @@ fn main() {
                 return Err(e.into());
             }
             let state = app.state::<BackendState>();
-            if let Err(e) = ensure_backend_started(&app.handle(), &state) {
-                append_log_line("WARN", &format!("Backend start failed (continuing in degraded mode): {e}"));
+            // Spawn only — health wait is handled by frontend boot loader (avoids ~30s white window).
+            if let Err(e) = spawn_backend_if_needed(&app.handle(), &state) {
+                append_log_line("WARN", &format!("Backend spawn failed: {e}"));
                 if let Ok(mut g) = state.bootstrap_error.lock() {
-                    *g = Some(e.clone());
+                    *g = Some(e);
                 }
-                if let Some(win) = app.get_window("main") {
-                    tauri::api::dialog::blocking::message(
-                        Some(&win),
-                        "Backend ishga tushmadi",
-                        &format!(
-                            "{e}\n\nDastur cheklangan rejimda ochiladi. Ilovada 'Qayta urinish' tugmasi backendni qayta ishga tushirishga urinadi.\n\nLog: GeeksPOS/logs/backend_boot.log"
-                        ),
-                    );
-                }
-            } else if let Ok(mut g) = state.bootstrap_error.lock() {
-                *g = None;
             }
             // Explicitly disable startup autorun/task entries (requested for POS stability).
             disable_windows_autostart_entries();

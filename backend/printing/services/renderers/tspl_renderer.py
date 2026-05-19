@@ -59,6 +59,12 @@ def _tspl_layout_centered(
     # Space under bars for CODE128 human-readable digits (printer-dependent).
     gap_after_bc = 28
 
+    compact = w_mm <= 40 and h_mm <= 30
+    if compact:
+        margin = 4
+        gap_small = 2
+        gap_after_bc = 18
+
     # Top line: size / color — small font "1", scale 1x1
     sc_font = "1"
     sc_char = 8
@@ -68,6 +74,10 @@ def _tspl_layout_centered(
     price_font = "2"
     price_char = 10
     price_line_h = 22
+    if compact:
+        sc_line_h = 12
+        price_line_h = 18
+        price_char = 9
 
     inner_w = max(16, w_dots - 2 * margin)
     inner_h = max(32, h_dots - 2 * margin)
@@ -79,6 +89,8 @@ def _tspl_layout_centered(
     bc_h = max(32, min(bc_h, inner_h - 20))
     # TSPL BARCODE height is in dots; cap so tiny labels still print
     bc_h = min(bc_h, 220)
+    if compact:
+        bc_h = min(bc_h, 100)
 
     # Pick narrow/wide so barcode fits inner_w (maximize nar for "biggest barcode")
     best_nar, best_wide = 1, 2

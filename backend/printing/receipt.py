@@ -522,6 +522,8 @@ def _label_escpos_cols(size: str) -> int:
         return 42
     if s == "50x40":
         return 40
+    if s == "40x30":
+        return 28
     return 32
 
 
@@ -531,6 +533,8 @@ def _label_escpos_barcode_height(size: str) -> int:
         return 108
     if s in ("50x40", "58mm"):
         return 88
+    if s == "40x30":
+        return 50
     return 72
 
 
@@ -560,11 +564,15 @@ def label_escpos_bytes(*, variant, size: str = "40x30", copies: int = 1) -> byte
         size_color = f"{variant.size.label_uz} {variant.color.label_uz}"[:cols]
         price = _format_amount(variant.list_price)
         bc_h = _label_escpos_barcode_height(size)
-        bc_w = 3
+        skey = (size or "40x30").strip().lower()
+        bc_w = 2 if skey == "40x30" else 3
         for _ in range(max(1, int(copies))):
             p.set(align="center", width=1, height=1)
             p.text(f"{brand}\n")
-            p.set(align="center", width=2, height=2)
+            if skey == "40x30":
+                p.set(align="center", width=1, height=1)
+            else:
+                p.set(align="center", width=2, height=2)
             p.text(f"{model}\n")
             p.set(align="center", width=1, height=1)
             p.text(f"{size_color}\n")
@@ -591,7 +599,10 @@ def label_escpos_bytes(*, variant, size: str = "40x30", copies: int = 1) -> byte
                     align_ct=False,
                 )
             p.text("\n")
-            p.set(align="center", width=2, height=2)
+            if skey == "40x30":
+                p.set(align="center", width=1, height=2)
+            else:
+                p.set(align="center", width=2, height=2)
             p.text(f"{price}\n")
         try:
             p.cut(mode="PART")

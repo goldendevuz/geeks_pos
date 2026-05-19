@@ -2,6 +2,7 @@ import pytest
 from django.contrib.auth.models import User
 from django.utils import timezone
 from datetime import timedelta
+from rest_framework.test import APIClient
 
 from debt.models import Customer
 from debt.models import Debt
@@ -49,6 +50,7 @@ def test_cashier_x_report_ok_for_cashier(client):
     r = client.get("/api/reports/cashier-x/")
     assert r.status_code == 200
     j = r.json()
+    assert "gross_profit" in j
     assert "cash_total" in j
     assert "card_total" in j
     assert "sales_count" in j
@@ -84,6 +86,8 @@ def test_reports_summary_allowed_for_owner(client):
     assert "totals" in body
     assert "top_cashiers" in body
     assert "gross_profit" in body["totals"]
+    assert "operating_profit" in body["totals"]
+    assert "net_sales_approx" in body["totals"]
     assert "total_discounts" in body["totals"]
 
 
@@ -106,6 +110,19 @@ def test_order_discount_saved_in_sale(client):
     assert r.status_code == 200
     sale = Sale.objects.get(idempotency_key="discount-case-1")
     assert sale.discount_total == Decimal("10000")
+
+
+@pytest.mark.django_db
+def test_z_report_allowed_for_cashier(monkeypatch):
+    cashier = _mk_user("cashier_z_ok", "CASHIER")
+    api = APIClient()
+    api.force_authenticate(user=cashier)
+    monkeypatch.setattr(
+        "integrations.views.send_daily_z_report",
+        lambda **kwargs: {"ok": True, "channel_results": {"telegram": {"ok": True}}},
+    )
+    r = api.post("/api/integrations/z-report/send/", format="json")
+    assert r.status_code == 200
 
 
 @pytest.mark.django_db
@@ -261,6 +278,116 @@ def test_dashboard_financial_contract_completed_only_and_discount_aware(client):
     assert totals["sales_amount"] == "140000"
     assert totals["total_discounts"] == "10000"
     assert totals["gross_profit"] == "40000"
+    assert totals["operating_profit"] == "40000"
+    assert totals["net_profit"] == "40000"
+    assert totals["net_sales_approx"] == "140000"
+
+
+@pytest.mark.django_db
+def test_sales_metrics_order_discount_margin_matches_grand_less_cogs():
+    cashier = _mk_user("cashier_od_margin", "CASHIER")
+    variant = _mk_variant(stock_qty=20)
+    from sales.services import complete_sale
+
+    complete_sale(
+        idempotency_key="od-margin-sale",
+        cashier=cashier,
+        lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
+        payments=[{"method": "CASH", "amount": "140000"}],
+        customer=None,
+        order_discount=Decimal("10000"),
+        expected_grand_total=Decimal("140000"),
+    )
+    m = sales_metrics()
+    assert str(m["gross_profit"]) == "40000"
+    assert str(m["sales_amount"]) == "140000"
+
+
+@pytest.mark.django_db
+def test_today_operating_profit_subtracts_today_expenses():
+    cashier = _mk_user("cashier_today_op", "CASHIER")
+    owner = _mk_user("owner_today_op", "OWNER")
+    variant = _mk_variant()
+    from expenses.models import ShopExpense
+    from sales.services import complete_sale
+
+    complete_sale(
+        idempotency_key="today-op-sale",
+        cashier=cashier,
+        lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
+        payments=[{"method": "CASH", "amount": "150000"}],
+        customer=None,
+        expected_grand_total=Decimal("150000"),
+    )
+    ShopExpense.objects.create(
+        amount=Decimal("8000.00"),
+        category=ShopExpense.Category.OTHER,
+        note="",
+        recorded_by=owner,
+    )
+    m = sales_metrics()
+    assert str(m["today_gross_profit"]) == "50000"
+    assert str(m["today_operating_profit"]) == "42000"
+    assert str(m["today_expense_total"]) == "8000"
+
+
+@pytest.mark.django_db
+def test_operating_profit_subtracts_expenses():
+    cashier = _mk_user("cashier_oper_gp", "CASHIER")
+    owner = _mk_user("owner_oper_gp", "OWNER")
+    variant = _mk_variant()
+    from expenses.models import ShopExpense
+    from sales.services import complete_sale
+
+    complete_sale(
+        idempotency_key="oper-gp-sale",
+        cashier=cashier,
+        lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
+        payments=[{"method": "CASH", "amount": "150000"}],
+        customer=None,
+        expected_grand_total=Decimal("150000"),
+    )
+    ShopExpense.objects.create(
+        amount=Decimal("10000.00"),
+        category=ShopExpense.Category.OTHER,
+        note="",
+        recorded_by=owner,
+    )
+    m = sales_metrics()
+    assert str(m["gross_profit"]) == "50000"
+    assert str(m["operating_profit"]) == "40000"
+    assert str(m["net_profit"]) == "40000"
+
+
+@pytest.mark.django_db
+def test_returned_total_weighted_duplicate_variant():
+    """Weighted line_total avg when same variant appears on two sale lines."""
+    cashier = _mk_user("cashier_rt_weight", "CASHIER")
+    variant = _mk_variant(stock_qty=20)
+    from reports.services import q_money as q_money_rp
+    from sales.services import complete_sale, return_sale_lines
+
+    sale = complete_sale(
+        idempotency_key="dup-var-sale",
+        cashier=cashier,
+        lines=[
+            {"variant_id": str(variant.id), "qty": 1, "line_discount": "50000"},
+            {"variant_id": str(variant.id), "qty": 1, "line_discount": "0"},
+        ],
+        payments=[{"method": "CASH", "amount": "250000"}],
+        customer=None,
+        order_discount=None,
+        expected_grand_total=Decimal("250000"),
+    )
+    sale.refresh_from_db()
+    assert sale.grand_total == Decimal("250000")
+
+    ln_sum = sum(Decimal(str(l.line_total)) for l in sale.lines.all())
+    return_sale_lines(sale=sale, user=cashier, lines=[{"variant_id": str(variant.id), "qty": 2}], reason="wt")
+
+    m = sales_metrics()
+    assert m["returned_total"] == q_money_rp(ln_sum)
+
 
 
 @pytest.mark.django_db
@@ -358,6 +485,39 @@ def test_sales_metrics_counts_real_returns_not_voids(client):
     m = sales_metrics()
     assert m["returned_count"] >= 1
     assert str(m["returned_total"]) == "150000"
+
+
+@pytest.mark.django_db
+def test_gross_profit_and_net_sales_after_full_return():
+    """To'liq qaytariqdan keyin marja va taxminiy sof savdo nolga yaqinlashadi."""
+    cashier = _mk_user("cashier_gp_ret", "CASHIER")
+    variant = _mk_variant()
+    from sales.services import complete_sale, return_sale_lines
+
+    sale = complete_sale(
+        idempotency_key="gp-ret-sale",
+        cashier=cashier,
+        lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
+        payments=[{"method": "CASH", "amount": "150000"}],
+        customer=None,
+        expected_grand_total=Decimal("150000"),
+    )
+    before = sales_metrics()
+    assert str(before["gross_profit"]) == "50000"
+    assert str(before["net_sales_approx"]) == "150000"
+
+    return_sale_lines(
+        sale=sale,
+        user=cashier,
+        lines=[{"variant_id": str(variant.id), "qty": 1}],
+        reason="full",
+    )
+    after = sales_metrics()
+    assert str(after["returned_total"]) == "150000"
+    assert str(after["returned_cogs"]) == "100000"
+    assert str(after["gross_profit"]) == "0"
+    assert str(after["net_sales_approx"]) == "0"
+    assert after["today_return_move_count"] >= 1
 
 
 @pytest.mark.django_db

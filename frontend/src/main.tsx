@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import i18n, { loadLocale } from './i18n'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
+import { BootScreen, type BootStage } from './components/BootScreen'
 
 const RUNTIME_API_KEY = 'geeks_pos_runtime_api_base'
 const HEALTH_FETCH_MS = 2000
@@ -25,75 +26,43 @@ window.addEventListener('unhandledrejection', (event) => {
   void appendUiLog('ERROR', `unhandledrejection: ${reason}`)
 })
 
-type BootStage =
-  | 'boot_init'
-  | 'runtime_check'
-  | 'backend_spawn'
-  | 'backend_wait'
-  | 'timeout_warn'
-  | 'boot_failed'
-
 function renderBoot(root: ReturnType<typeof createRoot>, stage: BootStage, opts?: { detail?: string; onRetry?: () => void }) {
-  const stageText: Record<BootStage, string> = {
-    boot_init: 'Geeks POS yuklanmoqda...',
-    runtime_check: 'Tizim komponentlari tekshirilmoqda...',
-    backend_spawn: 'Backend ishga tushirilmoqda...',
-    backend_wait: 'Serverga ulanilmoqda...',
-    timeout_warn: "Ishga tushish odatdagidan uzoq davom etmoqda...",
-    boot_failed: 'Backend ishga tushmadi.',
-  }
-  const isFailed = stage === 'boot_failed'
-  const isWarn = stage === 'timeout_warn'
   root.render(
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
-      <div className="text-center space-y-3 max-w-xl px-5">
-        {!isFailed && <div className="mx-auto h-10 w-10 rounded-full border-4 border-slate-700 border-t-emerald-500 animate-spin" />}
-        <div className="text-xl font-semibold">{stageText[stage]}</div>
-        <div className="text-sm text-slate-400">
-          {opts?.detail || 'Iltimos kuting, tizim tayyorlanmoqda.'}
-        </div>
-        {isWarn && <div className="text-xs text-amber-300">Server 5 soniyadan ko'p kutilyapti. Qayta urinish mumkin.</div>}
-        {(isWarn || isFailed) && (
-          <div className="flex flex-wrap justify-center gap-2 pt-2">
-            <button
-              type="button"
-              className="touch-btn min-h-12 px-4 rounded-xl bg-emerald-700 border border-emerald-500"
-              onClick={() => opts?.onRetry?.()}
-            >
-              {isWarn ? 'Server ishga tushmadi — qayta urinish' : 'Qayta urinish'}
-            </button>
-            <button
-              type="button"
-              className="touch-btn min-h-12 px-4 rounded-xl bg-slate-800 border border-slate-600"
-              onClick={async () => {
-                let logPath = '%APPDATA%\\GeeksPOS\\logs\\backend_boot.log'
-                if (isTauriRuntime()) {
-                  try {
-                    const { invoke } = await import('@tauri-apps/api/tauri')
-                    logPath = await invoke<string>('get_backend_boot_log_path')
-                  } catch {
-                    // keep fallback
-                  }
-                }
-                try {
-                  const { open } = await import('@tauri-apps/api/shell')
-                  await open(logPath)
-                } catch {
-                  try {
-                    await navigator.clipboard.writeText(logPath)
-                  } catch {
-                    // ignore
-                  }
-                }
-              }}
-            >
-              Log manzili
-            </button>
-          </div>
-        )}
-      </div>
-    </div>,
+    <BootScreen
+      stage={stage}
+      detail={opts?.detail}
+      onRetry={opts?.onRetry}
+      onOpenLog={
+        stage === 'boot_failed' || stage === 'timeout_warn'
+          ? () => {
+              void openBootLog()
+            }
+          : undefined
+      }
+    />,
   )
+}
+
+async function openBootLog() {
+  let logPath = '%APPDATA%\\GeeksPOS\\logs\\backend_boot.log'
+  if (isTauriRuntime()) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/tauri')
+      logPath = await invoke<string>('get_backend_boot_log_path')
+    } catch {
+      // keep fallback
+    }
+  }
+  try {
+    const { open } = await import('@tauri-apps/api/shell')
+    await open(logPath)
+  } catch {
+    try {
+      await navigator.clipboard.writeText(logPath)
+    } catch {
+      // ignore
+    }
+  }
 }
 
 async function fetchHealthOk(base: string, signal: AbortSignal): Promise<boolean> {
@@ -136,7 +105,7 @@ async function bootstrap() {
 
     try {
       renderBoot(root, 'runtime_check')
-      await new Promise((resolve) => window.setTimeout(resolve, 120))
+      await new Promise((resolve) => window.setTimeout(resolve, 80))
       renderBoot(root, 'backend_spawn')
 
       const tauriRuntime = isTauriRuntime()
@@ -159,7 +128,6 @@ async function bootstrap() {
           const elapsed = Date.now() - started
           if (elapsed >= 5000 && elapsed < 30000) {
             renderBoot(root, 'timeout_warn', {
-              detail: undefined,
               onRetry: () => {
                 void retryBoot()
               },
@@ -194,6 +162,7 @@ async function bootstrap() {
         }
       }
 
+      renderBoot(root, 'app_loading')
       await loadLocale(i18n.language || 'uz')
       const { default: App } = await import('./App.tsx')
       root.render(

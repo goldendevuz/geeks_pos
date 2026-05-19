@@ -469,6 +469,8 @@ export type Variant = {
   product: string
   product_name_uz: string
   product_name_ru?: string
+  category_name_uz?: string
+  category_name_ru?: string
   size: string
   size_label_uz: string
   size_label_ru?: string
@@ -489,6 +491,8 @@ export type CashierStockVariant = {
   product: string
   product_name_uz: string
   product_name_ru: string
+  category_name_uz?: string
+  category_name_ru?: string
   size: string
   size_label_uz: string
   size_label_ru: string
@@ -497,6 +501,7 @@ export type CashierStockVariant = {
   color_label_ru: string
   barcode: string | null
   list_price: string
+  purchase_price?: string
   stock_qty: number
   is_active: boolean
 }
@@ -509,7 +514,12 @@ export type CashierXReport = {
   cash_total: string
   card_total: string
   debt_total: string
+  refund_cash?: string
+  refund_card?: string
+  refund_debt?: string
+  refund_total?: string
   avg_check: string
+  gross_profit?: string
   range: { from: string; to: string }
 }
 
@@ -631,12 +641,18 @@ export async function fetchVariants(params?: {
   q?: string
   page?: number
   pageSize?: number
+  ordering?: 'name' | 'recent'
+  category_id?: string
+  product_id?: string
 }): Promise<Paginated<Variant>> {
   const q = new URLSearchParams()
   if (params?.includeDeleted) q.set('include_deleted', '1')
   if (params?.q) q.set('q', params.q)
   if (params?.page) q.set('page', String(params.page))
   if (params?.pageSize) q.set('page_size', String(params.pageSize))
+  if (params?.ordering) q.set('ordering', params.ordering)
+  if (params?.category_id) q.set('category_id', params.category_id)
+  if (params?.product_id) q.set('product_id', params.product_id)
   const qs = q.toString() ? `?${q.toString()}` : ''
   const r = await fetch(`${API}/api/catalog/variants/${qs}`, { credentials: 'include' })
   if (!r.ok) throw new Error('FETCH_VARIANTS_FAILED')
@@ -877,6 +893,8 @@ export async function updateDebtCustomer(
   return j as { id: string; name: string; phone_normalized: string }
 }
 
+export type SaleReturnStatusHistory = 'none' | 'partial' | 'full'
+
 export type SaleHistoryRow = {
   id: string
   public_sale_no?: string
@@ -886,6 +904,9 @@ export type SaleHistoryRow = {
   grand_total: string
   subtotal?: string
   discount_total?: string
+  return_status?: SaleReturnStatusHistory
+  refund_total?: string
+  can_void?: boolean
 }
 
 export type DashboardSummary = {
@@ -893,9 +914,22 @@ export type DashboardSummary = {
     sales_count: number
     sales_amount: string
     today_sales_amount: string
+    today_sales_count?: number
+    today_items_sold_qty?: number
+    today_return_move_count?: number
+    today_return_qty?: number
+    today_void_count?: number
+    expense_total?: string
+    today_expense_total?: string
+    today_gross_profit?: string
+    today_operating_profit?: string
     today_cash_total?: string
     today_card_total?: string
     today_debt_total?: string
+    today_refund_cash?: string
+    today_refund_card?: string
+    today_refund_total?: string
+    refund_total?: string
     void_count: number
     avg_check: string
     gross_profit: string
@@ -906,11 +940,14 @@ export type DashboardSummary = {
     card_total?: string
     debt_total?: string
     returned_total?: string
+    returned_cogs?: string
     inventory_items?: number
     inventory_purchase_value?: string
     inventory_sale_value?: string
     turnover_amount?: string
     net_profit?: string
+    operating_profit?: string
+    net_sales_approx?: string
   }
   top_cashiers: Array<{
     cashier: string
@@ -952,6 +989,44 @@ export async function fetchDashboardSummary(params?: { from?: string; to?: strin
   return (await r.json()) as DashboardSummary
 }
 
+export type ExpenseCategory = 'RENT' | 'UTILITIES' | 'SUPPLIES' | 'SALARY' | 'OTHER'
+
+export type ShopExpenseRow = {
+  id: string
+  recorded_at: string
+  amount: string
+  category: ExpenseCategory
+  note: string
+  cashier_username?: string
+}
+
+export async function fetchShopExpenses(params?: { from?: string; to?: string }): Promise<ShopExpenseRow[]> {
+  const q = new URLSearchParams()
+  if (params?.from) q.set('from', params.from)
+  if (params?.to) q.set('to', params.to)
+  const qs = q.toString() ? `?${q.toString()}` : ''
+  const r = await fetch(`${API}/api/expenses/${qs}`, { credentials: 'include' })
+  if (!r.ok) throw await parseErrorResponse(r, 'FETCH_EXPENSES_FAILED')
+  return r.json()
+}
+
+export async function createShopExpense(payload: {
+  amount: string
+  category: ExpenseCategory
+  note?: string
+}): Promise<ShopExpenseRow> {
+  const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
+  const r = await fetch(`${API}/api/expenses/`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+    body: JSON.stringify(payload),
+  })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw new AppError(j.code || 'CREATE_EXPENSE_FAILED', j.detail)
+  return j as ShopExpenseRow
+}
+
 export async function exportSalesXlsx(params?: { from?: string; to?: string }) {
   const q = new URLSearchParams()
   if (params?.from) q.set('from', params.from)
@@ -966,6 +1041,141 @@ export async function exportSalesXlsx(params?: { from?: string; to?: string }) {
   a.download = 'sales_history.xlsx'
   a.click()
   URL.revokeObjectURL(url)
+}
+
+export type SalePaymentRow = {
+  method: string
+  amount: string
+}
+
+export type SaleReturnPreviewLine = {
+  variant_id: string
+  barcode: string
+  category_name_uz: string
+  category_name_ru: string
+  product_name_uz: string
+  product_name_ru: string
+  size_label_uz: string
+  size_label_ru: string
+  color_label_uz: string
+  color_label_ru: string
+  qty: number
+  list_unit_price: string
+  net_unit_price: string
+  line_discount: string
+  line_total: string
+  stock_qty: number
+}
+
+export type SaleSearchForReturnRow = {
+  sale_id: string
+  public_sale_no?: string
+  completed_at: string
+  cashier_username: string
+  subtotal?: string
+  discount_total?: string
+  grand_total: string
+  payments?: SalePaymentRow[]
+  preview_lines?: SaleReturnPreviewLine[]
+}
+
+export async function fetchSalesSearchForReturn(q: string): Promise<{ results: SaleSearchForReturnRow[] }> {
+  const r = await fetch(`${API}/api/sales/search/return/?q=${encodeURIComponent(q)}`, {
+    credentials: 'include',
+  })
+  if (!r.ok) throw await parseErrorResponse(r, 'RETURN_SEARCH_FAILED')
+  return r.json() as Promise<{ results: SaleSearchForReturnRow[] }>
+}
+
+export type SaleReturnEligibleLineRow = {
+  variant_id: string
+  barcode: string
+  product_name_uz: string
+  product_name_ru?: string
+  category_name_uz?: string
+  category_name_ru?: string
+  size_label_uz: string
+  size_label_ru?: string
+  color_label_uz: string
+  color_label_ru?: string
+  sold_qty: number
+  returned_qty: number
+  remaining_qty: number
+  list_unit_price?: string
+  net_unit_price?: string
+  line_discount?: string
+  line_total_sold?: string
+  stock_qty?: number
+}
+
+export type SaleReturnState = 'returnable' | 'fully_returned' | 'no_lines'
+
+export type RefundMethod = 'CASH' | 'CARD' | 'DEBT'
+
+export type SaleRefundRow = { method: RefundMethod; amount: string }
+
+export async function fetchSaleReturnLines(saleId: string): Promise<{
+  sale_id: string
+  public_sale_no?: string
+  completed_at?: string
+  cashier_username?: string
+  subtotal?: string
+  discount_total?: string
+  grand_total?: string
+  payments?: SalePaymentRow[]
+  refunds_already?: SaleRefundRow[]
+  refund_capacity?: Partial<Record<RefundMethod, string>>
+  return_state?: SaleReturnState
+  total_remaining_qty?: number
+  lines: SaleReturnEligibleLineRow[]
+}> {
+  const r = await fetch(`${API}/api/sales/${saleId}/return-lines/`, {
+    credentials: 'include',
+  })
+  if (!r.ok) throw await parseErrorResponse(r, 'RETURN_LINES_FAILED')
+  return r.json() as Promise<{
+    sale_id: string
+    public_sale_no?: string
+    completed_at?: string
+    cashier_username?: string
+    subtotal?: string
+    discount_total?: string
+    grand_total?: string
+    payments?: SalePaymentRow[]
+    refunds_already?: SaleRefundRow[]
+    refund_capacity?: Partial<Record<RefundMethod, string>>
+    return_state?: SaleReturnState
+    total_remaining_qty?: number
+    lines: SaleReturnEligibleLineRow[]
+  }>
+}
+
+export async function submitSaleReturn(
+  saleId: string,
+  payload: {
+    lines: Array<{ variant_id: string; qty: number }>
+    reason?: string
+    auto_refund?: boolean
+    skip_refund?: boolean
+    refunds?: Array<{ method: RefundMethod; amount: string | number }>
+  },
+) {
+  const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
+  const r = await fetch(`${API}/api/sales/${saleId}/return/`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+    body: JSON.stringify(payload),
+  })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw new AppError(j.code || 'RETURN_FAILED', j.detail)
+  return j as {
+    sale_id: string
+    status: string
+    lines: Array<{ variant_id: string; qty: number }>
+    return_amount?: string
+    refunds?: SaleRefundRow[]
+  }
 }
 
 export async function voidSale(saleId: string, reason: string) {
@@ -1158,6 +1368,9 @@ export type StocktakeSession = {
     id: string
     variant: string
     product_name_uz: string
+    product_name_ru?: string
+    category_name_uz?: string
+    category_name_ru?: string
     barcode: string
     expected_qty: number
     counted_qty: number | null
