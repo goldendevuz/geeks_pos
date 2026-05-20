@@ -4,7 +4,7 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = []
 binaries = []
-hiddenimports = ['config', 'config.settings', 'config.urls', 'config.api_urls', 'config.wsgi', 'dotenv', 'escpos', 'escpos.capabilities', 'yaml', 'core.apps', 'accounts.apps', 'catalog.apps', 'inventory.apps', 'sales.apps', 'debt.apps', 'printing.apps', 'sync.apps', 'reports.apps', 'integrations.apps', 'licensing.apps']
+hiddenimports = ['config', 'config.settings', 'config.urls', 'config.api_urls', 'config.wsgi', 'dotenv', 'escpos', 'escpos.capabilities', 'yaml', 'core.apps', 'accounts.apps', 'catalog.apps', 'inventory.apps', 'sales.apps', 'debt.apps', 'printing.apps', 'sync.apps', 'reports.apps', 'integrations.apps', 'licensing.apps', 'expenses.apps']
 hiddenimports += collect_submodules('config')
 hiddenimports += collect_submodules('django')
 hiddenimports += collect_submodules('waitress')
@@ -33,6 +33,8 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('integrations')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('licensing')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('expenses')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 

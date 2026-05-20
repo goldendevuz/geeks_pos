@@ -45,7 +45,7 @@ else {
 # INSTALLED_APPS dagi barcha loyiha ilovalari — to‘liq paket (modellar, migratsiyalar, apps.py).
 $projectApps = @(
   "core", "accounts", "catalog", "inventory", "sales", "debt",
-  "printing", "sync", "reports", "integrations", "licensing"
+  "printing", "sync", "reports", "integrations", "licensing", "expenses"
 )
 $collectProject = @()
 foreach ($app in $projectApps) {
@@ -56,7 +56,8 @@ foreach ($app in $projectApps) {
 # AppConfig modullari (Django import_module("core.apps") uchun aniq).
 $hiddenApps = @(
   "core.apps", "accounts.apps", "catalog.apps", "inventory.apps", "sales.apps", "debt.apps",
-  "printing.apps", "sync.apps", "reports.apps", "integrations.apps", "licensing.apps"
+  "printing.apps", "sync.apps", "reports.apps", "integrations.apps", "licensing.apps",
+  "expenses.apps"
 )
 $hiddenImports = @()
 foreach ($h in $hiddenApps) {

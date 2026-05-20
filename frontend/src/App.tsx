@@ -1,6 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
-import { useTranslation } from 'react-i18next'
 import {
   adjustInventory,
   applyStocktake,
@@ -126,7 +125,6 @@ const ReturnSalePage = lazy(async () => {
 })
 
 export default function App() {
-  const { t } = useTranslation()
   const [booting, setBooting] = useState(true)
   const [authed, setAuthed] = useState(false)
   const [role, setRole] = useState<UserRole | null>(null)
