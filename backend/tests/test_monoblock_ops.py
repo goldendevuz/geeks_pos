@@ -6,7 +6,7 @@ import pytest
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
-from catalog.models import Category, Color, Product, ProductVariant, Size
+from catalog.models import Category, Product, ProductVariant
 
 
 def _mk_user(username: str, role: str) -> User:
@@ -17,18 +17,12 @@ def _mk_user(username: str, role: str) -> User:
 
 
 def _mk_variant(stock_qty: int = 10) -> ProductVariant:
-    cat = Category.objects.create(name_uz="Kiyim", name_ru="Одежда")
-    sz = Size.objects.create(value="42", label_uz="42", label_ru="42", sort_order=1)
-    col = Color.objects.create(value="BLACK-MONO", label_uz="Qora", label_ru="Черный", sort_order=1)
-    prod = Product.objects.create(category=cat, name_uz="Keta", name_ru="Кеды")
+    cat = Category.objects.create(name_uz="Kiyim", name_ru="Одежда")    prod = Product.objects.create(category=cat, name_uz="Keta", name_ru="Кеды")
     return ProductVariant.objects.create(
         product=prod,
-        size=sz,
-        color=col,
         purchase_price=Decimal("100000.00"),
         list_price=Decimal("150000.00"),
-        stock_qty=stock_qty,
-    )
+        stock_qty=stock_qty)
 
 
 @pytest.mark.django_db
@@ -66,8 +60,7 @@ def test_pos_variant_by_product_for_cashier(client):
     client.force_login(cashier)
     r = client.get(
         "/api/catalog/variants/pos-by-product/",
-        data={"product_id": str(variant.product_id), "color_id": str(variant.color_id)},
-    )
+        data={"product_id": str(variant.product_id), "color_id": str(variant.color_id)})
     assert r.status_code == 200
     results = r.json()["results"]
     assert len(results) == 1
@@ -82,8 +75,7 @@ def test_pos_price_update_allowed_for_cashier(client):
     r = client.post(
         f"/api/catalog/variants/{variant.id}/pos-price/",
         data={"list_price": "160000"},
-        content_type="application/json",
-    )
+        content_type="application/json")
     assert r.status_code == 200
     variant.refresh_from_db()
     assert variant.list_price == Decimal("160000")
@@ -97,16 +89,14 @@ def test_label_endpoints_owner_allowed(client):
     single = client.post(
         "/api/printing/labels/escpos/",
         data={"variant_id": str(variant.id), "size": "40x30", "copies": 1},
-        content_type="application/json",
-    )
+        content_type="application/json")
     assert single.status_code == 200
     assert "escpos_base64" in single.json()
 
     queue = client.post(
         "/api/printing/labels/queue/escpos/",
         data={"size": "40x30", "items": [{"variant_id": str(variant.id), "copies": 2}]},
-        content_type="application/json",
-    )
+        content_type="application/json")
     assert queue.status_code == 200
     assert len(queue.json()["items"]) == 1
 
@@ -129,8 +119,7 @@ def test_hardware_config_patch_by_cashier(client):
     r = client.patch(
         "/api/printing/hardware-config/",
         data={"receipt_printer_name": "PATCH-PRINTER-TEST"},
-        content_type="application/json",
-    )
+        content_type="application/json")
     assert r.status_code == 200
     assert r.json()["receipt_printer_name"] == "PATCH-PRINTER-TEST"
 
@@ -182,8 +171,7 @@ def test_store_settings_save_hardware_fields_for_owner(client):
             "scanner_prefix": "",
             "scanner_suffix": "\\t",
         },
-        content_type="application/json",
-    )
+        content_type="application/json")
     assert r.status_code == 200
     body = r.json()
     assert body["receipt_printer_name"] == "EPSON TM-T20"
@@ -198,8 +186,7 @@ def test_label_endpoint_returns_variant_not_found_code(client):
     r = client.post(
         "/api/printing/labels/escpos/",
         data={"variant_id": missing_variant_id, "size": "40x30", "copies": 1},
-        content_type="application/json",
-    )
+        content_type="application/json")
     assert r.status_code == 404
     assert r.json()["code"] == "VARIANT_NOT_FOUND"
 
@@ -223,8 +210,7 @@ def test_bulk_grid_returns_product_not_found_code(client):
                 }
             ],
         },
-        content_type="application/json",
-    )
+        content_type="application/json")
     assert r.status_code == 404
     assert r.json()["code"] == "PRODUCT_NOT_FOUND"
 
@@ -250,14 +236,12 @@ def test_tspl_label_size_matches_request(client):
     put = client.put(
         "/api/printing/settings/",
         data={"label_printer_type": "TSPL"},
-        content_type="application/json",
-    )
+        content_type="application/json")
     assert put.status_code == 200
     r50 = client.post(
         "/api/printing/labels/escpos/",
         data={"variant_id": str(variant.id), "size": "40x50", "copies": 1},
-        content_type="application/json",
-    )
+        content_type="application/json")
     assert r50.status_code == 200
     raw50 = base64.b64decode(r50.json()["raw_base64"]).decode("ascii", errors="ignore")
     assert "SIZE 40 mm,50 mm" in raw50
@@ -267,8 +251,7 @@ def test_tspl_label_size_matches_request(client):
     r58 = client.post(
         "/api/printing/labels/escpos/",
         data={"variant_id": str(variant.id), "size": "58mm", "copies": 1},
-        content_type="application/json",
-    )
+        content_type="application/json")
     assert r58.status_code == 200
     raw58 = base64.b64decode(r58.json()["raw_base64"]).decode("ascii", errors="ignore")
     assert "SIZE 58 mm,40 mm" in raw58

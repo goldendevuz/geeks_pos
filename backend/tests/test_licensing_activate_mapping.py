@@ -30,16 +30,14 @@ def _activate_ok():
         (404, {"detail": "Invalid activation key."}, "LICENSE_KEY_INVALID"),
         (400, {"detail": "License is not active."}, "LICENSE_NOT_ACTIVE"),
         (429, {"detail": "Too many requests."}, "LICENSE_RATE_LIMITED"),
-    ],
-)
+    ])
 def test_activate_maps_upstream_errors_on_verify(monkeypatch, status_code, payload, expected_code):
     owner = _mk_user(f"owner_map_{expected_code.lower()}", "OWNER")
     client = APIClient()
     client.force_authenticate(user=owner)
     monkeypatch.setattr(
         "licensing.views.remote_verify_activation_key",
-        lambda activation_key: (False, payload, status_code),
-    )
+        lambda activation_key: (False, payload, status_code))
 
     def _no_activate(**kwargs):
         raise AssertionError("activate should not run when verify fails")
@@ -48,8 +46,7 @@ def test_activate_maps_upstream_errors_on_verify(monkeypatch, status_code, paylo
     r = client.post(
         "/api/licensing/activate/",
         {"activation_key": "ACT-1", "hardware_id": "HW-1", "client_meta": {"os": "windows"}},
-        format="json",
-    )
+        format="json")
     assert r.status_code == status_code
     assert r.json()["code"] == expected_code
 
@@ -61,21 +58,17 @@ def test_activate_maps_upstream_errors_on_activate(monkeypatch):
     client.force_authenticate(user=owner)
     monkeypatch.setattr(
         "licensing.views.remote_verify_activation_key",
-        lambda activation_key: (True, _verify_ok_active(), 200),
-    )
+        lambda activation_key: (True, _verify_ok_active(), 200))
     monkeypatch.setattr(
         "licensing.views.remote_activate",
         lambda activation_key, hardware_id, client_meta=None: (
             False,
             {"detail": "Invalid activation key."},
-            404,
-        ),
-    )
+            404))
     r = client.post(
         "/api/licensing/activate/",
         {"activation_key": "ACT-1", "hardware_id": "HW-1", "client_meta": {"os": "windows"}},
-        format="json",
-    )
+        format="json")
     assert r.status_code == 404
     assert r.json()["code"] == "LICENSE_KEY_INVALID"
 
@@ -87,8 +80,7 @@ def test_activate_maps_unreachable_to_502(monkeypatch):
     client.force_authenticate(user=owner)
     monkeypatch.setattr(
         "licensing.views.remote_verify_activation_key",
-        lambda activation_key: (False, "timed out", 0),
-    )
+        lambda activation_key: (False, "timed out", 0))
 
     def _no_activate(**kwargs):
         raise AssertionError("activate should not run when verify unreachable")
@@ -97,8 +89,7 @@ def test_activate_maps_unreachable_to_502(monkeypatch):
     r = client.post(
         "/api/licensing/activate/",
         {"activation_key": "ACT-1", "hardware_id": "HW-1", "client_meta": {"os": "windows"}},
-        format="json",
-    )
+        format="json")
     assert r.status_code == 502
     assert r.json()["code"] == "LICENSE_UPSTREAM_UNREACHABLE"
 
@@ -111,12 +102,10 @@ def test_activate_success_verify_then_activate(monkeypatch):
     client.force_authenticate(user=owner)
     monkeypatch.setattr(
         "licensing.views.remote_verify_activation_key",
-        lambda activation_key: (True, _verify_ok_active(), 200),
-    )
+        lambda activation_key: (True, _verify_ok_active(), 200))
     monkeypatch.setattr(
         "licensing.views.remote_activate",
-        lambda activation_key, hardware_id, client_meta=None: (True, _activate_ok(), 200),
-    )
+        lambda activation_key, hardware_id, client_meta=None: (True, _activate_ok(), 200))
     r = client.post(
         "/api/licensing/activate/",
         {
@@ -124,8 +113,7 @@ def test_activate_success_verify_then_activate(monkeypatch):
             "hardware_id": "22a895c8-47c6-45de-8340-72ec4bdb97a9",
             "client_meta": {},
         },
-        format="json",
-    )
+        format="json")
     assert r.status_code == 200
     body = r.json()
     assert body.get("valid") is True
@@ -139,8 +127,7 @@ def test_activate_key_invalid_on_verify(monkeypatch):
     client.force_authenticate(user=owner)
     monkeypatch.setattr(
         "licensing.views.remote_verify_activation_key",
-        lambda activation_key: (True, {"detail": "Invalid activation key."}, 404),
-    )
+        lambda activation_key: (True, {"detail": "Invalid activation key."}, 404))
 
     def _no_activate(**kwargs):
         raise AssertionError("activate should not run when verify returns 404")
@@ -149,8 +136,7 @@ def test_activate_key_invalid_on_verify(monkeypatch):
     r = client.post(
         "/api/licensing/activate/",
         {"activation_key": "WRONG-KEY", "hardware_id": "22a895c8-47c6-45de-8340-72ec4bdb97a9"},
-        format="json",
-    )
+        format="json")
     assert r.status_code == 404
     assert r.json()["code"] == "LICENSE_KEY_INVALID"
 
@@ -162,8 +148,7 @@ def test_activate_verify_not_active(monkeypatch):
     client.force_authenticate(user=owner)
     monkeypatch.setattr(
         "licensing.views.remote_verify_activation_key",
-        lambda activation_key: (True, {"status": "expired", "detail": "License expired"}, 200),
-    )
+        lambda activation_key: (True, {"status": "expired", "detail": "License expired"}, 200))
 
     def _no_activate(**kwargs):
         raise AssertionError("activate should not run when verify status is not active")
@@ -172,8 +157,7 @@ def test_activate_verify_not_active(monkeypatch):
     r = client.post(
         "/api/licensing/activate/",
         {"activation_key": "ACT-1", "hardware_id": "22a895c8-47c6-45de-8340-72ec4bdb97a9"},
-        format="json",
-    )
+        format="json")
     assert r.status_code == 400
     assert r.json()["code"] == "LICENSE_NOT_ACTIVE"
 
@@ -185,21 +169,17 @@ def test_activate_hardware_mismatch_on_activate(monkeypatch):
     client.force_authenticate(user=owner)
     monkeypatch.setattr(
         "licensing.views.remote_verify_activation_key",
-        lambda activation_key: (True, _verify_ok_active(), 200),
-    )
+        lambda activation_key: (True, _verify_ok_active(), 200))
     monkeypatch.setattr(
         "licensing.views.remote_activate",
         lambda activation_key, hardware_id, client_meta=None: (
             False,
             {"detail": "Hardware ID mismatch."},
-            403,
-        ),
-    )
+            403))
     r = client.post(
         "/api/licensing/activate/",
         {"activation_key": "ACT-1", "hardware_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"},
-        format="json",
-    )
+        format="json")
     assert r.status_code == 403
     assert r.json()["code"] == "LICENSE_HARDWARE_MISMATCH"
 
@@ -227,12 +207,10 @@ def test_activate_success_yearly_null_end_date_uses_start_plus_year(monkeypatch)
     p = _remote_payload_like_pos_geeksandijan()
     monkeypatch.setattr(
         "licensing.views.remote_verify_activation_key",
-        lambda activation_key: (True, dict(p), 200),
-    )
+        lambda activation_key: (True, dict(p), 200))
     monkeypatch.setattr(
         "licensing.views.remote_activate",
-        lambda activation_key, hardware_id, client_meta=None: (True, dict(p), 200),
-    )
+        lambda activation_key, hardware_id, client_meta=None: (True, dict(p), 200))
     r = client.post(
         "/api/licensing/activate/",
         {
@@ -240,8 +218,7 @@ def test_activate_success_yearly_null_end_date_uses_start_plus_year(monkeypatch)
             "hardware_id": "22a895c8-47c6-45de-8340-72ec4bdb97a9",
             "client_meta": {},
         },
-        format="json",
-    )
+        format="json")
     assert r.status_code == 200
     body = r.json()
     assert body.get("valid") is True

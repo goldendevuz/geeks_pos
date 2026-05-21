@@ -44,6 +44,11 @@ class StoreSettings(models.Model):
     scanner_prefix = models.CharField(max_length=16, blank=True, default="")
     scanner_suffix = models.CharField(max_length=16, blank=True, default="\t")
     lock_timeout_minutes = models.PositiveSmallIntegerField(default=5)
+    
+    # Inventory & Pricing Configuration
+    low_stock_threshold = models.PositiveIntegerField(default=2, help_text="Minimum stock quantity before product is considered low stock")
+    show_price_on_labels_default = models.BooleanField(default=True, help_text="Whether to display price on printed labels by default")
+    show_selling_price_in_catalog = models.BooleanField(default=True, help_text="Whether to display selling price in catalog and POS")
 
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -149,7 +149,7 @@ class LabelEscposView(APIView):
         ser.is_valid(raise_exception=True)
         settings = StoreSettings.get_solo()
         try:
-            v = ProductVariant.objects.select_related("product__category", "product", "size", "color").get(
+            v = ProductVariant.objects.select_related("product__category", "product").get(
                 pk=ser.validated_data["variant_id"]
             )
         except ProductVariant.DoesNotExist:
@@ -188,7 +188,7 @@ class LabelQueueEscposView(APIView):
         settings = StoreSettings.get_solo()
         out = []
         requested_ids = [str(item["variant_id"]) for item in ser.validated_data["items"]]
-        variants = ProductVariant.objects.select_related("product__category", "product", "size", "color").filter(
+        variants = ProductVariant.objects.select_related("product__category", "product").filter(
             pk__in=requested_ids
         )
         by_id = {str(v.id): v for v in variants}
@@ -283,8 +283,6 @@ class TestLabelPrintView(APIView):
             barcode="TEST123456",
             list_price="100000",
             product=SimpleNamespace(name_uz="Demo", category=SimpleNamespace(name_uz="BrandCat")),
-            size=SimpleNamespace(label_uz="40"),
-            color=SimpleNamespace(label_uz="Qora"),
         )
         try:
             raw = PrinterFactory.render_label(

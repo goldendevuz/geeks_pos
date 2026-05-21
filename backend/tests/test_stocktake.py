@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 from django.contrib.auth.models import User
 
-from catalog.models import Category, Color, Product, ProductVariant, Size
+from catalog.models import Category, Product, ProductVariant
 from inventory.models import InventoryMovement
 from inventory.services import apply_movement, apply_stocktake, create_stocktake_session, set_stocktake_count
 
@@ -19,25 +19,19 @@ def admin_user(db):
 
 @pytest.fixture
 def variant(db, admin_user):
-    cat = Category.objects.create(name_uz=f"Kiyim-{uuid.uuid4()}", name_ru="Одежда")
-    sz = Size.objects.create(value="44", label_uz="44", label_ru="44", sort_order=1)
-    col = Color.objects.create(value=f"BLACK-{uuid.uuid4()}", label_uz="Qora", label_ru="Черный", sort_order=1)
+    cat = Category.objects.create(name_uz=f"Kiyim-{uuid.uuid4()}", name_ru="Одежда")    col = Color.objects.create(value=f"BLACK-{uuid.uuid4()}", label_uz="Qora", label_ru="Черный", sort_order=1)
     prod = Product.objects.create(category=cat, name_uz=f"Kross-{uuid.uuid4()}", name_ru="Кросс")
     v = ProductVariant.objects.create(
         product=prod,
-        size=sz,
-        color=col,
         purchase_price=Decimal("100000.00"),
         list_price=Decimal("150000.00"),
-        stock_qty=0,
-    )
+        stock_qty=0)
     apply_movement(
         variant=v,
         qty_delta=5,
         movement_type=InventoryMovement.Type.IN,
         user=admin_user,
-        note="seed",
-    )
+        note="seed")
     v.refresh_from_db()
     return v
 

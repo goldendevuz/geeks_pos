@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.contrib.auth.models import User
 from django.db.models import Sum
 
-from catalog.models import Category, Color, Product, ProductVariant, Size
+from catalog.models import Category, Product, ProductVariant
 from sales.refund_utils import compute_return_amount
 from sales.services import complete_sale, return_sale_lines
 
@@ -17,19 +17,13 @@ def _mk_user(username: str) -> User:
 
 
 def _mk_variant() -> ProductVariant:
-    cat = Category.objects.create(name_uz="K", name_ru="K")
-    sz = Size.objects.create(value="42", label_uz="42", label_ru="42", sort_order=1)
-    col = Color.objects.create(value="B", label_uz="Q", label_ru="Q", sort_order=1)
-    prod = Product.objects.create(category=cat, name_uz="P", name_ru="P")
+    cat = Category.objects.create(name_uz="K", name_ru="K")    prod = Product.objects.create(category=cat, name_uz="P", name_ru="P")
     return ProductVariant.objects.create(
         product=prod,
-        size=sz,
-        color=col,
         purchase_price=Decimal("100000"),
         list_price=Decimal("150000"),
         stock_qty=10,
-        barcode="BC-ORD-DISC",
-    )
+        barcode="BC-ORD-DISC")
 
 
 @pytest.mark.django_db
@@ -43,8 +37,7 @@ def test_return_amount_scales_with_order_discount():
         payments=[{"method": "CASH", "amount": "250000"}],
         customer=None,
         order_discount=Decimal("50000"),
-        expected_grand_total=Decimal("250000"),
-    )
+        expected_grand_total=Decimal("250000"))
     assert sale.grand_total == Decimal("250000")
     lines = [{"variant_id": str(variant.id), "qty": 2}]
     assert compute_return_amount(sale=sale, lines=lines) == Decimal("250000")
@@ -53,6 +46,5 @@ def test_return_amount_scales_with_order_discount():
         sale=sale,
         user=cashier,
         lines=lines,
-        reason="full with order discount",
-    )
+        reason="full with order discount")
     assert sale.refunds.aggregate(t=Sum("amount"))["t"] == Decimal("250000")

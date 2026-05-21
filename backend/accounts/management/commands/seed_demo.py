@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
 
 from accounts.models import Role, UserProfile
-from catalog.models import Category, Color, Product, ProductVariant, Size
+from catalog.models import Category, Product, ProductVariant
 from inventory.models import InventoryMovement
 from inventory.services import apply_movement
 
@@ -33,21 +33,6 @@ class Command(BaseCommand):
                 sort_order=1,
             )
 
-        sz = Size.objects.filter(value="42").first()
-        if not sz:
-            sz = Size.objects.create(
-                value="42", label_uz="42", label_ru="42", sort_order=1
-            )
-
-        col = Color.objects.filter(value="BLACK").first()
-        if not col:
-            col = Color.objects.create(
-                value="BLACK",
-                label_uz="Qora",
-                label_ru="Черный",
-                sort_order=1,
-            )
-
         prod = Product.objects.filter(
             category=cat, name_uz="Namuna krossovka"
         ).first()
@@ -61,8 +46,6 @@ class Command(BaseCommand):
 
         v, vc = ProductVariant.objects.get_or_create(
             product=prod,
-            size=sz,
-            color=col,
             defaults={
                 "purchase_price": Decimal("200000.00"),
                 "list_price": Decimal("350000.00"),

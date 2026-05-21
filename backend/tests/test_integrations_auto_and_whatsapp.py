@@ -58,8 +58,7 @@ def test_zreport_whatsapp_values_include_correct_net_and_shares(monkeypatch):
             "returned_count": 1,
             "returned_total": Decimal("4000"),
             "open_debt_total": Decimal("6200"),
-        },
-    )
+        })
 
     captured = {}
 

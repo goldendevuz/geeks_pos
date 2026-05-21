@@ -108,10 +108,7 @@ export function CashStockPage({ role }: { role: UserRole | null }) {
                   <td className="p-2">
                     {langRu ? v.product_name_ru || v.product_name_uz : v.product_name_uz}
                   </td>
-                  <td className="p-2">
-                    {langRu ? v.size_label_ru || v.size_label_uz : v.size_label_uz} /{' '}
-                    {langRu ? v.color_label_ru || v.color_label_uz : v.color_label_uz}
-                  </td>
+                  <td className="p-2">—</td>
                   <td className="p-2 font-mono text-xs">{v.barcode}</td>
                   <td className="p-2 text-right tabular-nums">{v.stock_qty}</td>
                   {showPurchase && (

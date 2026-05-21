@@ -6,6 +6,7 @@ from .views import (
     SaleHistoryExportCsvView,
     SaleHistoryExportXlsxView,
     SaleHistoryView,
+    SaleLinePriceEditView,
     SaleReturnLinesView,
     SaleReturnView,
     SaleSearchForReturnView,
@@ -21,5 +22,6 @@ urlpatterns = [
     path("<uuid:pk>/void/", SaleVoidView.as_view()),
     path("<uuid:pk>/return-lines/", SaleReturnLinesView.as_view()),
     path("<uuid:pk>/return/", SaleReturnView.as_view()),
+    path("<uuid:sale_id>/line/<uuid:line_id>/price/", SaleLinePriceEditView.as_view()),
     path("<uuid:pk>/", SaleDetailView.as_view()),
 ]

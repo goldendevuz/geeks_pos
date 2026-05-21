@@ -25,8 +25,7 @@ def test_enqueue_and_flush_marks_sent(monkeypatch):
 
     monkeypatch.setattr(
         "integrations.services._post_json",
-        lambda *a, **k: (True, "{}"),
-    )
+        lambda *a, **k: (True, "{}"))
 
     out = flush_pending(limit=10)
     assert out["sent"] >= 1
@@ -50,8 +49,7 @@ def test_flush_internal_key_localhost(client, settings, monkeypatch):
         "/api/integrations/notification-queue/flush/",
         data={},
         content_type="application/json",
-        HTTP_X_INTERNAL_KEY="wrong",
-    )
+        HTTP_X_INTERNAL_KEY="wrong")
     assert r.status_code in (401, 403)
 
     r2 = client.post(
@@ -59,8 +57,7 @@ def test_flush_internal_key_localhost(client, settings, monkeypatch):
         data={},
         content_type="application/json",
         HTTP_X_INTERNAL_KEY="test-flush-secret",
-        REMOTE_ADDR="127.0.0.1",
-    )
+        REMOTE_ADDR="127.0.0.1")
     assert r2.status_code == 200
 
 

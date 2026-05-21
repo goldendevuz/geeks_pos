@@ -32,22 +32,20 @@ def resolve_receipt_store_lang(settings: StoreSettings, request_lang: str | None
     return _normalize_lang(request_lang)
 
 
-def _receipt_variant_texts(receipt_lang: str, product, size, color) -> tuple[str, str, str]:
-    """Mahsulot/o'lcham/rang — chek tili bo'yicha; KY uchun DB'da alohida maydon yo'q, RU keyin UZ."""
+def _receipt_variant_texts(receipt_lang: str, product) -> str:
+    """Get product name for receipt - supports custom names for appliances."""
     rl = _normalize_lang(receipt_lang)
     if rl == "uz":
-        name = (getattr(product, "name_uz", None) or getattr(product, "name_ru", None) or "").strip()
-        sz = (getattr(size, "label_uz", None) or getattr(size, "label_ru", None) or "").strip()
-        cl = (getattr(color, "label_uz", None) or getattr(color, "label_ru", None) or "").strip()
+        # Try custom name first, fallback to regular name
+        custom = (getattr(product, "custom_name_uz", None) or "").strip()
+        name = custom or (getattr(product, "name_uz", None) or getattr(product, "name_ru", None) or "").strip()
     elif rl == "ru":
-        name = (getattr(product, "name_ru", None) or getattr(product, "name_uz", None) or "").strip()
-        sz = (getattr(size, "label_ru", None) or getattr(size, "label_uz", None) or "").strip()
-        cl = (getattr(color, "label_ru", None) or getattr(color, "label_uz", None) or "").strip()
+        custom = (getattr(product, "custom_name_ru", None) or "").strip()
+        name = custom or (getattr(product, "name_ru", None) or getattr(product, "name_uz", None) or "").strip()
     else:
-        name = (getattr(product, "name_ru", None) or getattr(product, "name_uz", None) or "").strip()
-        sz = (getattr(size, "label_ru", None) or getattr(size, "label_uz", None) or "").strip()
-        cl = (getattr(color, "label_ru", None) or getattr(color, "label_uz", None) or "").strip()
-    return _strip_cjk(name), _strip_cjk(sz), _strip_cjk(cl)
+        custom = (getattr(product, "custom_name_ru", None) or "").strip()
+        name = custom or (getattr(product, "name_ru", None) or getattr(product, "name_uz", None) or "").strip()
+    return _strip_cjk(name)
 
 
 def _labels(lang: str) -> dict[str, str]:
@@ -181,14 +179,12 @@ def sale_to_receipt_dict(sale, *, lang: str = "uz") -> dict:
     settings = StoreSettings.get_solo()
     store_lang = resolve_receipt_store_lang(settings, lang)
     lines_out = []
-    for line in sale.lines.select_related("variant__product", "variant__size", "variant__color"):
+    for line in sale.lines.select_related("variant__product"):
         v = line.variant
-        nm, sz, cl = _receipt_variant_texts(store_lang, v.product, v.size, v.color)
+        nm = _receipt_variant_texts(store_lang, v.product)
         lines_out.append(
             {
                 "name": nm,
-                "size": sz,
-                "color": cl,
                 "barcode": v.barcode,
                 "qty": line.qty,
                 "unit": _format_amount(line.net_unit_price),
@@ -256,7 +252,7 @@ def receipt_plain_text(receipt: dict) -> str:
     buf.append("-" * width)
 
     for ln in receipt["lines"]:
-        title = t(f"{ln['name']} {ln['color']} {ln['size']}")
+        title = t(ln['name'])
         wrapped = _wrap_text(title, width)
         if wrapped:
             buf.extend(wrapped)
@@ -561,7 +557,6 @@ def label_escpos_bytes(*, variant, size: str = "40x30", copies: int = 1) -> byte
         brand_src = (settings.brand_name or "").strip() or cat
         brand = brand_src[:cols]
         model = (variant.product.name_uz or "")[:cols]
-        size_color = f"{variant.size.label_uz} {variant.color.label_uz}"[:cols]
         price = _format_amount(variant.list_price)
         bc_h = _label_escpos_barcode_height(size)
         skey = (size or "40x30").strip().lower()
@@ -574,8 +569,6 @@ def label_escpos_bytes(*, variant, size: str = "40x30", copies: int = 1) -> byte
             else:
                 p.set(align="center", width=2, height=2)
             p.text(f"{model}\n")
-            p.set(align="center", width=1, height=1)
-            p.text(f"{size_color}\n")
             p.set(align="center")
             # Avoid python-escpos profile warning on Dummy() printers where media.width.pixel is unset.
             try:

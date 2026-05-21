@@ -1,6 +1,6 @@
 import type { Variant } from '../api'
 
-/** Brend (category), model (product), barcode, o'lcham, rang bo'yicha moslik. */
+/** Brend (category), model (product), barcode bo'yicha moslik. */
 export function variantMatchesSearch(v: Variant, needle: string): boolean {
   const n = needle.trim().toLowerCase()
   if (!n) return true
@@ -10,10 +10,6 @@ export function variantMatchesSearch(v: Variant, needle: string): boolean {
     v.product_name_ru,
     v.category_name_uz,
     v.category_name_ru,
-    v.size_label_uz,
-    v.size_label_ru,
-    v.color_label_uz,
-    v.color_label_ru,
   ]
   return parts.some((p) => (p ?? '').toLowerCase().includes(n))
 }

@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from django.contrib.auth.models import User
 
-from catalog.models import Category, Color, Product, ProductVariant, Size
+from catalog.models import Category, Product, ProductVariant
 from sales.models import Sale, SaleRefund
 from sales.services import complete_sale, return_sale_lines, void_sale
 
@@ -16,19 +16,13 @@ def _mk_user(username: str, role: str) -> User:
 
 
 def _mk_variant(*, barcode: str = "BC-VOID-PART", stock_qty: int = 10) -> ProductVariant:
-    cat = Category.objects.create(name_uz="Kiyim", name_ru="Одежда")
-    sz = Size.objects.create(value="42", label_uz="42", label_ru="42", sort_order=1)
-    col = Color.objects.create(value="BLK", label_uz="Qora", label_ru="Черный", sort_order=1)
-    prod = Product.objects.create(category=cat, name_uz="Kross", name_ru="Кросс")
+    cat = Category.objects.create(name_uz="Kiyim", name_ru="Одежда")    prod = Product.objects.create(category=cat, name_uz="Kross", name_ru="Кросс")
     return ProductVariant.objects.create(
         product=prod,
-        size=sz,
-        color=col,
         purchase_price=Decimal("100000.00"),
         list_price=Decimal("150000.00"),
         stock_qty=stock_qty,
-        barcode=barcode,
-    )
+        barcode=barcode)
 
 
 @pytest.mark.django_db
@@ -40,8 +34,7 @@ def test_void_after_partial_return_restock_only_remaining_and_refund_rest():
         cashier=cashier,
         lines=[{"variant_id": str(variant.id), "qty": 3, "line_discount": "0"}],
         payments=[{"method": "CASH", "amount": "450000.00"}],
-        customer=None,
-    )
+        customer=None)
     variant.refresh_from_db()
     assert variant.stock_qty == 2
 
@@ -49,8 +42,7 @@ def test_void_after_partial_return_restock_only_remaining_and_refund_rest():
         sale=sale,
         user=cashier,
         lines=[{"variant_id": str(variant.id), "qty": 2}],
-        reason="partial",
-    )
+        reason="partial")
     variant.refresh_from_db()
     assert variant.stock_qty == 4
 
@@ -77,14 +69,12 @@ def test_void_fully_returned_sale_rejected():
         cashier=cashier,
         lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
         payments=[{"method": "CASH", "amount": "150000.00"}],
-        customer=None,
-    )
+        customer=None)
     return_sale_lines(
         sale=sale,
         user=cashier,
         lines=[{"variant_id": str(variant.id), "qty": 1}],
-        reason="full",
-    )
+        reason="full")
     variant.refresh_from_db()
     stock_before_void = variant.stock_qty
 

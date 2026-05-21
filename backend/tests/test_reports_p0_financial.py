@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from django.contrib.auth.models import User
 
-from catalog.models import Category, Color, Product, ProductVariant, Size
+from catalog.models import Category, Product, ProductVariant
 from reports.services import sales_metrics
 from sales.models import Sale
 from sales.services import complete_sale, return_sale_lines, void_sale
@@ -19,19 +19,13 @@ def _mk_user(username: str) -> User:
 
 
 def _mk_variant() -> ProductVariant:
-    cat = Category.objects.create(name_uz="K", name_ru="K")
-    sz = Size.objects.create(value="42", label_uz="42", label_ru="42", sort_order=1)
-    col = Color.objects.create(value="B", label_uz="Q", label_ru="Q", sort_order=1)
-    prod = Product.objects.create(category=cat, name_uz="P", name_ru="P")
+    cat = Category.objects.create(name_uz="K", name_ru="K")    prod = Product.objects.create(category=cat, name_uz="P", name_ru="P")
     return ProductVariant.objects.create(
         product=prod,
-        size=sz,
-        color=col,
         purchase_price=Decimal("100000"),
         list_price=Decimal("150000"),
         stock_qty=10,
-        barcode="BC-P0-MET",
-    )
+        barcode="BC-P0-MET")
 
 
 @pytest.mark.django_db
@@ -45,14 +39,12 @@ def test_returned_total_matches_refund_with_order_discount():
         payments=[{"method": "CASH", "amount": "250000"}],
         customer=None,
         order_discount=Decimal("50000"),
-        expected_grand_total=Decimal("250000"),
-    )
+        expected_grand_total=Decimal("250000"))
     return_sale_lines(
         sale=sale,
         user=cashier,
         lines=[{"variant_id": str(variant.id), "qty": 1}],
-        reason="half",
-    )
+        reason="half")
     m = sales_metrics()
     assert str(m["returned_total"]) == "125000"
 
@@ -66,8 +58,7 @@ def test_gross_profit_stable_after_partial_return_then_void():
         cashier=cashier,
         lines=[{"variant_id": str(variant.id), "qty": 3, "line_discount": "0"}],
         payments=[{"method": "CASH", "amount": "450000"}],
-        customer=None,
-    )
+        customer=None)
     before = sales_metrics()
     assert str(before["gross_profit"]) == "150000"
     assert str(before["sales_amount"]) == "450000"
@@ -76,8 +67,7 @@ def test_gross_profit_stable_after_partial_return_then_void():
         sale=sale,
         user=cashier,
         lines=[{"variant_id": str(variant.id), "qty": 2}],
-        reason="partial",
-    )
+        reason="partial")
     mid = sales_metrics()
     assert str(mid["sales_amount"]) == "450000"
     assert str(mid["returned_total"]) == "300000"

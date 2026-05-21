@@ -6,7 +6,7 @@ from rest_framework.test import APIClient
 
 from debt.models import Customer
 from debt.models import Debt
-from catalog.models import Category, Color, Product, ProductVariant, Size
+from catalog.models import Category, Product, ProductVariant
 from decimal import Decimal
 from sales.models import Sale
 from reports.services import sales_metrics
@@ -21,18 +21,12 @@ def _mk_user(username: str, role: str) -> User:
 
 
 def _mk_variant(stock_qty: int = 10) -> ProductVariant:
-    cat = Category.objects.create(name_uz="Kiyim", name_ru="Одежда")
-    sz = Size.objects.create(value="42", label_uz="42", label_ru="42", sort_order=1)
-    col = Color.objects.create(value="BLACK-REP", label_uz="Qora", label_ru="Черный", sort_order=1)
-    prod = Product.objects.create(category=cat, name_uz="Keta", name_ru="Кеды")
+    cat = Category.objects.create(name_uz="Kiyim", name_ru="Одежда")    prod = Product.objects.create(category=cat, name_uz="Keta", name_ru="Кеды")
     return ProductVariant.objects.create(
         product=prod,
-        size=sz,
-        color=col,
         purchase_price=Decimal("100000.00"),
         list_price=Decimal("150000.00"),
-        stock_qty=stock_qty,
-    )
+        stock_qty=stock_qty)
 
 
 @pytest.mark.django_db
@@ -65,13 +59,11 @@ def test_inventory_receive_adjust_forbidden_for_cashier(client):
     rec = client.post(
         "/api/inventory/receive/",
         data={"variant_id": str(variant.id), "qty": 1},
-        content_type="application/json",
-    )
+        content_type="application/json")
     adj = client.post(
         "/api/inventory/adjust/",
         data={"variant_id": str(variant.id), "qty_delta": -1},
-        content_type="application/json",
-    )
+        content_type="application/json")
     assert rec.status_code == 403
     assert adj.status_code == 403
 
@@ -105,8 +97,7 @@ def test_order_discount_saved_in_sale(client):
             "expected_grand_total": "140000",
         },
         content_type="application/json",
-        HTTP_IDEMPOTENCY_KEY="discount-case-1",
-    )
+        HTTP_IDEMPOTENCY_KEY="discount-case-1")
     assert r.status_code == 200
     sale = Sale.objects.get(idempotency_key="discount-case-1")
     assert sale.discount_total == Decimal("10000")
@@ -119,8 +110,7 @@ def test_z_report_allowed_for_cashier(monkeypatch):
     api.force_authenticate(user=cashier)
     monkeypatch.setattr(
         "integrations.views.send_daily_z_report",
-        lambda **kwargs: {"ok": True, "channel_results": {"telegram": {"ok": True}}},
-    )
+        lambda **kwargs: {"ok": True, "channel_results": {"telegram": {"ok": True}}})
     r = api.post("/api/integrations/z-report/send/", format="json")
     assert r.status_code == 200
 
@@ -138,8 +128,7 @@ def test_integration_settings_owner_allowed(client):
             "whatsapp_api_token": "tok",
             "whatsapp_sender": "GEEKS",
         },
-        content_type="application/json",
-    )
+        content_type="application/json")
     assert r.status_code == 200
     assert r.json()["telegram_chat_id"] == "1"
 
@@ -152,8 +141,7 @@ def test_integration_actions_owner_allowed_with_stub(client, monkeypatch):
 
     monkeypatch.setattr(
         "integrations.views.send_daily_z_report",
-        lambda **kwargs: {"ok": True, "details": "ok", "channel_results": {"telegram": {"ok": True}}},
-    )
+        lambda **kwargs: {"ok": True, "details": "ok", "channel_results": {"telegram": {"ok": True}}})
     captured = {}
     def _fake_reminder(**kwargs):
         captured.update(kwargs)
@@ -169,8 +157,7 @@ def test_integration_actions_owner_allowed_with_stub(client, monkeypatch):
         "/api/integrations/whatsapp/remind/",
         data={"customer_id": str(customer.id), "amount": "120000"},
         HTTP_ACCEPT_LANGUAGE="ru",
-        content_type="application/json",
-    )
+        content_type="application/json")
     assert w.status_code == 200
     assert captured.get("lang") == "ru"
     assert isinstance(captured.get("debt_items"), list)
@@ -183,8 +170,7 @@ def test_whatsapp_reminder_customer_not_found_controlled_error(client):
     r = client.post(
         "/api/integrations/whatsapp/remind/",
         data={"customer_id": "00000000-0000-0000-0000-000000000001", "amount": "1000"},
-        content_type="application/json",
-    )
+        content_type="application/json")
     assert r.status_code == 404
     assert r.json()["code"] == "CUSTOMER_NOT_FOUND"
 
@@ -200,8 +186,7 @@ def test_whatsapp_reminder_message_includes_debt_details(client, monkeypatch):
         cashier=cashier,
         subtotal=Decimal("150000"),
         discount_total=Decimal("0"),
-        grand_total=Decimal("150000"),
-    )
+        grand_total=Decimal("150000"))
     Debt.objects.create(
         customer=customer,
         originating_sale=sale,
@@ -209,8 +194,7 @@ def test_whatsapp_reminder_message_includes_debt_details(client, monkeypatch):
         paid_amount=Decimal("0"),
         remaining_amount=Decimal("150000"),
         due_date=timezone.localdate() + timedelta(days=7),
-        status=Debt.Status.OPEN,
-    )
+        status=Debt.Status.OPEN)
     client.force_login(owner)
     captured = {}
     def _fake_reminder(**kwargs):
@@ -220,8 +204,7 @@ def test_whatsapp_reminder_message_includes_debt_details(client, monkeypatch):
     r = client.post(
         "/api/integrations/whatsapp/remind/",
         data={"customer_id": str(customer.id), "amount": "150000"},
-        content_type="application/json",
-    )
+        content_type="application/json")
     assert r.status_code == 200
     items = captured.get("debt_items")
     assert isinstance(items, list) and len(items) == 1
@@ -247,8 +230,7 @@ def test_dashboard_financial_contract_completed_only_and_discount_aware(client):
             "expected_grand_total": "140000",
         },
         content_type="application/json",
-        HTTP_IDEMPOTENCY_KEY="fin-contract-1",
-    )
+        HTTP_IDEMPOTENCY_KEY="fin-contract-1")
     assert r1.status_code == 200
     r2 = client.post(
         "/api/sales/complete/",
@@ -258,16 +240,14 @@ def test_dashboard_financial_contract_completed_only_and_discount_aware(client):
             "expected_grand_total": "150000",
         },
         content_type="application/json",
-        HTTP_IDEMPOTENCY_KEY="fin-contract-2",
-    )
+        HTTP_IDEMPOTENCY_KEY="fin-contract-2")
     assert r2.status_code == 200
     sale2 = r2.json()["sale_id"]
     client.force_login(owner)
     v = client.post(
         f"/api/sales/{sale2}/void/",
         data={"reason": "test-void"},
-        content_type="application/json",
-    )
+        content_type="application/json")
     assert v.status_code == 200
 
     summary = client.get("/api/reports/summary/")
@@ -296,8 +276,7 @@ def test_sales_metrics_order_discount_margin_matches_grand_less_cogs():
         payments=[{"method": "CASH", "amount": "140000"}],
         customer=None,
         order_discount=Decimal("10000"),
-        expected_grand_total=Decimal("140000"),
-    )
+        expected_grand_total=Decimal("140000"))
     m = sales_metrics()
     assert str(m["gross_profit"]) == "40000"
     assert str(m["sales_amount"]) == "140000"
@@ -317,14 +296,12 @@ def test_today_operating_profit_subtracts_today_expenses():
         lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
         payments=[{"method": "CASH", "amount": "150000"}],
         customer=None,
-        expected_grand_total=Decimal("150000"),
-    )
+        expected_grand_total=Decimal("150000"))
     ShopExpense.objects.create(
         amount=Decimal("8000.00"),
         category=ShopExpense.Category.OTHER,
         note="",
-        recorded_by=owner,
-    )
+        recorded_by=owner)
     m = sales_metrics()
     assert str(m["today_gross_profit"]) == "50000"
     assert str(m["today_operating_profit"]) == "42000"
@@ -345,14 +322,12 @@ def test_operating_profit_subtracts_expenses():
         lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
         payments=[{"method": "CASH", "amount": "150000"}],
         customer=None,
-        expected_grand_total=Decimal("150000"),
-    )
+        expected_grand_total=Decimal("150000"))
     ShopExpense.objects.create(
         amount=Decimal("10000.00"),
         category=ShopExpense.Category.OTHER,
         note="",
-        recorded_by=owner,
-    )
+        recorded_by=owner)
     m = sales_metrics()
     assert str(m["gross_profit"]) == "50000"
     assert str(m["operating_profit"]) == "40000"
@@ -377,8 +352,7 @@ def test_returned_total_weighted_duplicate_variant():
         payments=[{"method": "CASH", "amount": "250000"}],
         customer=None,
         order_discount=None,
-        expected_grand_total=Decimal("250000"),
-    )
+        expected_grand_total=Decimal("250000"))
     sale.refresh_from_db()
     assert sale.grand_total == Decimal("250000")
 
@@ -408,8 +382,7 @@ def test_sales_metrics_parity_cash_card_debt(client):
             "expected_grand_total": "150000",
         },
         content_type="application/json",
-        HTTP_IDEMPOTENCY_KEY="metrics-pay-split",
-    )
+        HTTP_IDEMPOTENCY_KEY="metrics-pay-split")
     assert r.status_code == 200
     m = sales_metrics()
     assert str(m["sales_amount"]) == "150000"
@@ -432,8 +405,7 @@ def test_dashboard_summary_defaults_to_current_month(client):
             "expected_grand_total": "150000",
         },
         content_type="application/json",
-        HTTP_IDEMPOTENCY_KEY="filter-default-old-month",
-    )
+        HTTP_IDEMPOTENCY_KEY="filter-default-old-month")
     assert r.status_code == 200
     sale = Sale.objects.get(idempotency_key="filter-default-old-month")
     last_month = timezone.now() - timedelta(days=35)
@@ -471,16 +443,14 @@ def test_sales_metrics_counts_real_returns_not_voids(client):
             "expected_grand_total": "150000",
         },
         content_type="application/json",
-        HTTP_IDEMPOTENCY_KEY="ret-metrics-1",
-    )
+        HTTP_IDEMPOTENCY_KEY="ret-metrics-1")
     assert r.status_code == 200
     sale_id = r.json()["sale_id"]
     client.force_login(owner)
     rr = client.post(
         f"/api/sales/{sale_id}/return/",
         data={"lines": [{"variant_id": str(variant.id), "qty": 1}], "reason": "return"},
-        content_type="application/json",
-    )
+        content_type="application/json")
     assert rr.status_code == 200
     m = sales_metrics()
     assert m["returned_count"] >= 1
@@ -500,8 +470,7 @@ def test_gross_profit_and_net_sales_after_full_return():
         lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
         payments=[{"method": "CASH", "amount": "150000"}],
         customer=None,
-        expected_grand_total=Decimal("150000"),
-    )
+        expected_grand_total=Decimal("150000"))
     before = sales_metrics()
     assert str(before["gross_profit"]) == "50000"
     assert str(before["net_sales_approx"]) == "150000"
@@ -510,8 +479,7 @@ def test_gross_profit_and_net_sales_after_full_return():
         sale=sale,
         user=cashier,
         lines=[{"variant_id": str(variant.id), "qty": 1}],
-        reason="full",
-    )
+        reason="full")
     after = sales_metrics()
     assert str(after["returned_total"]) == "150000"
     assert str(after["returned_cogs"]) == "100000"

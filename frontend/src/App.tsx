@@ -5,9 +5,7 @@ import {
   adjustInventory,
   applyStocktake,
   createCategory,
-  createColor,
   createProduct,
-  createSize,
   createStocktakeSession,
   createVariantBulkGrid,
   deleteCategory,
@@ -15,7 +13,6 @@ import {
   deleteVariant,
   exportSalesXlsx,
   fetchCategories,
-  fetchColors,
   fetchMe,
   fetchLicenseStatus,
   fetchOpenDebts,
@@ -26,7 +23,6 @@ import {
   fetchLabelQueueEscpos,
   fetchSalesHistory,
   fetchStockEvents,
-  fetchSizes,
   fetchStocktakeSession,
   listStocktakeSessions,
   fetchStoreSettings,
@@ -45,14 +41,12 @@ import {
   updateVariant,
   voidSale,
   type Category,
-  type Color,
   type DashboardSummary,
   type DebtRow,
   type IntegrationSettings,
   type Paginated,
   type Product,
   type SaleHistoryRow,
-  type Size,
   type StocktakeSession,
   type StoreSettings,
   type LicenseStatus,
@@ -104,6 +98,10 @@ const SalesHistoryPage = lazy(async () => {
   const mod = await import('./pages/SalesHistoryPage')
   return { default: mod.SalesHistoryPage }
 })
+const SuppliersPage = lazy(async () => {
+  const mod = await import('./pages/SuppliersPage')
+  return { default: mod.SuppliersPage }
+})
 const SettingsPage = lazy(async () => {
   const mod = await import('./pages/SettingsPage')
   return { default: mod.SettingsPage }
@@ -126,7 +124,7 @@ const ReturnSalePage = lazy(async () => {
 })
 
 export default function App() {
-  const { t } = useTranslation()
+  useTranslation()
   const [booting, setBooting] = useState(true)
   const [authed, setAuthed] = useState(false)
   const [role, setRole] = useState<UserRole | null>(null)
@@ -144,8 +142,6 @@ export default function App() {
 
   const [categories, setCategories] = useState<Category[]>([])
   const [products, setProducts] = useState<Product[]>([])
-  const [sizes, setSizes] = useState<Size[]>([])
-  const [colors, setColors] = useState<Color[]>([])
   const [variants, setVariants] = useState<Paginated<Variant>>({
     count: 0,
     next: null,
@@ -305,8 +301,6 @@ export default function App() {
     const results = await Promise.allSettled([
       fetchCategories(),
       fetchProducts({ includeDeleted, page: 1, pageSize: 200 }),
-      fetchSizes(),
-      fetchColors(),
       fetchVariants({
         includeDeleted,
         q: catalogFilter.q,
@@ -323,14 +317,12 @@ export default function App() {
     ])
     if (results[0].status === 'fulfilled') setCategories(results[0].value)
     if (results[1].status === 'fulfilled') setProducts(results[1].value.results)
-    if (results[2].status === 'fulfilled') setSizes(results[2].value)
-    if (results[3].status === 'fulfilled') setColors(results[3].value)
-    if (results[4].status === 'fulfilled') setVariants(results[4].value)
-    if (results[5].status === 'fulfilled') setDebts(results[5].value)
-    if (results[6].status === 'fulfilled') setSales(results[6].value)
-    if (results[7].status === 'fulfilled') setSettings(results[7].value)
-    if (results[8].status === 'fulfilled') setDashboardSummary(results[8].value)
-    if (results[9].status === 'fulfilled') setIntegrationSettings(results[9].value)
+    if (results[2].status === 'fulfilled') setVariants(results[2].value)
+    if (results[3].status === 'fulfilled') setDebts(results[3].value)
+    if (results[4].status === 'fulfilled') setSales(results[4].value)
+    if (results[5].status === 'fulfilled') setSettings(results[5].value)
+    if (results[6].status === 'fulfilled') setDashboardSummary(results[6].value)
+    if (results[7].status === 'fulfilled') setIntegrationSettings(results[7].value)
   }
 
   const refreshAdminDataRef = useRef(refreshAdminData)
@@ -519,8 +511,6 @@ export default function App() {
                 sales={sales}
                 categories={categories}
                 products={products}
-                sizes={sizes}
-                colors={colors}
                 variants={variants.results}
                 variantCount={variants.count}
                 includeDeleted={includeDeleted}
@@ -544,14 +534,6 @@ export default function App() {
                 }}
                 onCreateProduct={async (payload) => {
                   await createProduct(payload)
-                  await refreshAdminData()
-                }}
-                onCreateSize={async (payload) => {
-                  await createSize(payload)
-                  await refreshAdminData()
-                }}
-                onCreateColor={async (payload) => {
-                  await createColor(payload)
                   await refreshAdminData()
                 }}
                 onDeleteCategory={async (categoryId) => {
@@ -708,8 +690,6 @@ function AdminPanel(props: {
   sales: Paginated<SaleHistoryRow>
   categories: Category[]
   products: Product[]
-  sizes: Size[]
-  colors: Color[]
   variants: Variant[]
   variantCount: number
   includeDeleted: boolean
@@ -724,8 +704,6 @@ function AdminPanel(props: {
   onCreateVariantBulk: (payload: { product_id: string; matrix: BulkGridCell[] }) => Promise<Variant[]>
   onCreateCategory: (payload: { name_uz: string; name_ru: string }) => Promise<void>
   onCreateProduct: (payload: { category: string; name_uz: string; name_ru: string }) => Promise<void>
-  onCreateSize: (payload: { value: string; label_uz: string; label_ru: string; sort_order?: number }) => Promise<void>
-  onCreateColor: (payload: { value: string; label_uz: string; label_ru: string; sort_order?: number }) => Promise<void>
   onDeleteCategory: (categoryId: string) => Promise<void>
   onDeleteProduct: (productId: string) => Promise<void>
   onToggleVariant: (v: Variant) => Promise<void>
@@ -869,8 +847,6 @@ function AdminPanel(props: {
               isCashier ? <Navigate to="/admin/sales" replace /> : <CatalogPage
                 categories={props.categories}
                 products={props.products}
-                sizes={props.sizes}
-                colors={props.colors}
                 variants={props.variants}
                 count={props.variantCount}
                 includeDeleted={props.includeDeleted}
@@ -879,8 +855,6 @@ function AdminPanel(props: {
                 onCreateVariantBulk={props.onCreateVariantBulk}
                 onCreateCategory={props.onCreateCategory}
                 onCreateProduct={props.onCreateProduct}
-                onCreateSize={props.onCreateSize}
-                onCreateColor={props.onCreateColor}
                 onDeleteCategory={props.onDeleteCategory}
                 onDeleteProduct={props.onDeleteProduct}
                 onAdjustStockQuick={props.onAdjustStockQuick}
@@ -908,6 +882,7 @@ function AdminPanel(props: {
             onSetCount={props.onSetStocktakeCount}
             onApplyStocktake={props.onApplyStocktake}
           />} />
+          <Route path="suppliers" element={isCashier ? <Navigate to="/admin/sales" replace /> : <SuppliersPage />} />
           <Route
             path="debts"
             element={

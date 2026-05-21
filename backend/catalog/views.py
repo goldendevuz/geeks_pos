@@ -9,17 +9,17 @@ from django.utils import timezone
 from core.audit import log_audit
 from core.permissions import IsAdminOrOwner, IsCashier
 
-from .models import Category, Color, Product, ProductVariant, Size
+from .models import Category, Product, ProductVariant, Supplier, SupplierTransaction
 from .serializers import (
     BulkGridSerializer,
     CashierStockRowSerializer,
     CategorySerializer,
-    ColorSerializer,
     PosPriceUpdateSerializer,
     PosProductVariantSerializer,
     ProductSerializer,
     ProductVariantSerializer,
-    SizeSerializer,
+    SupplierSerializer,
+    SupplierTransactionSerializer,
 )
 from .search import variant_text_search_q
 from .services import bulk_create_variant_grid
@@ -37,18 +37,6 @@ class CategoryListCreate(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated, IsAdminOrOwner]
 
 
-class SizeListCreate(generics.ListCreateAPIView):
-    queryset = Size.objects.all()
-    serializer_class = SizeSerializer
-    permission_classes = [IsAuthenticated, IsAdminOrOwner]
-
-
-class ColorListCreate(generics.ListCreateAPIView):
-    queryset = Color.objects.all()
-    serializer_class = ColorSerializer
-    permission_classes = [IsAuthenticated, IsAdminOrOwner]
-
-
 class CategoryDetail(generics.RetrieveUpdateDestroyAPIView):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
@@ -57,18 +45,6 @@ class CategoryDetail(generics.RetrieveUpdateDestroyAPIView):
     def perform_destroy(self, instance):
         instance.deleted_at = timezone.now()
         instance.save(update_fields=["deleted_at"])
-
-
-class SizeDetail(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Size.objects.all()
-    serializer_class = SizeSerializer
-    permission_classes = [IsAuthenticated, IsAdminOrOwner]
-
-
-class ColorDetail(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Color.objects.all()
-    serializer_class = ColorSerializer
-    permission_classes = [IsAuthenticated, IsAdminOrOwner]
 
 
 class ProductListCreate(generics.ListCreateAPIView):
@@ -101,7 +77,7 @@ class CashierStockListView(generics.ListAPIView):
     def get_queryset(self):
         query = (self.request.query_params.get("q") or "").strip()
         qs = ProductVariant.objects.select_related(
-            "product", "product__category", "size", "color"
+            "product", "product__category"
         ).filter(deleted_at__isnull=True)
         if query:
             qs = qs.filter(variant_text_search_q(query))
@@ -117,7 +93,7 @@ class ProductVariantListCreate(generics.ListCreateAPIView):
     def get_queryset(self):
         include_deleted = self.request.query_params.get("include_deleted") == "1"
         query = (self.request.query_params.get("q") or "").strip()
-        qs = ProductVariant.objects.select_related("product", "product__category", "size", "color")
+        qs = ProductVariant.objects.select_related("product", "product__category")
         if not include_deleted:
             qs = qs.filter(deleted_at__isnull=True)
         if query:
@@ -144,7 +120,7 @@ class VariantByBarcodeView(APIView):
         if not code:
             return Response({"code": "BARCODE_EMPTY"}, status=400)
         v = (
-            ProductVariant.objects.select_related("product", "size", "color")
+            ProductVariant.objects.select_related("product")
             .filter(barcode=code, is_active=True, deleted_at__isnull=True)
             .first()
         )
@@ -159,7 +135,7 @@ class VariantByBarcodeView(APIView):
 
 
 class PosVariantSearchView(APIView):
-    """Text search for POS (cashier): name, brand/model via product, size, color, barcode."""
+    """Text search for POS (cashier): name, brand/model via product, barcode."""
 
     permission_classes = [IsAuthenticated, IsCashier]
 
@@ -169,7 +145,7 @@ class PosVariantSearchView(APIView):
             return Response({"results": []})
         limit = min(int(request.query_params.get("limit") or 30), 50)
         qs = (
-            ProductVariant.objects.select_related("product", "product__category", "size", "color")
+            ProductVariant.objects.select_related("product", "product__category")
             .filter(is_active=True, deleted_at__isnull=True)
             .filter(variant_text_search_q(q))
             .order_by("product__name_uz", "barcode")[:limit]
@@ -178,7 +154,7 @@ class PosVariantSearchView(APIView):
 
 
 class PosVariantByProductView(APIView):
-    """All active variants for a product (optional color) — POS stock matrix."""
+    """All active variants for a product — simplified for appliances (no color filter)."""
 
     permission_classes = [IsAuthenticated, IsCashier]
 
@@ -192,18 +168,12 @@ class PosVariantByProductView(APIView):
             UUID(raw_pid)
         except ValueError:
             return Response({"code": "INVALID_PRODUCT_ID"}, status=400)
-        raw_cid = (request.query_params.get("color_id") or "").strip()
+        
         qs = (
-            ProductVariant.objects.select_related("product", "size", "color")
+            ProductVariant.objects.select_related("product")
             .filter(product_id=raw_pid, is_active=True, deleted_at__isnull=True)
-            .order_by("size__sort_order", "size__value", "color__sort_order", "barcode")
+            .order_by("barcode")
         )
-        if raw_cid:
-            try:
-                UUID(raw_cid)
-            except ValueError:
-                return Response({"code": "INVALID_COLOR_ID"}, status=400)
-            qs = qs.filter(color_id=raw_cid)
         return Response({"results": PosProductVariantSerializer(qs, many=True).data})
 
 
@@ -248,7 +218,7 @@ class ProductDetail(generics.RetrieveUpdateDestroyAPIView):
 
 
 class ProductVariantDetail(generics.RetrieveUpdateDestroyAPIView):
-    queryset = ProductVariant.objects.select_related("product", "size", "color")
+    queryset = ProductVariant.objects.select_related("product")
     serializer_class = ProductVariantSerializer
     permission_classes = [IsAuthenticated, IsAdminOrOwner]
 
@@ -273,7 +243,7 @@ class PosVariantPriceView(APIView):
 
     def post(self, request, pk):
         try:
-            variant = ProductVariant.objects.select_related("product", "size", "color").get(pk=pk)
+            variant = ProductVariant.objects.select_related("product").get(pk=pk)
         except ProductVariant.DoesNotExist:
             return Response({"code": "VARIANT_NOT_FOUND", "detail": "Variant not found."}, status=404)
         ser = PosPriceUpdateSerializer(data=request.data)
@@ -293,3 +263,434 @@ class PosVariantPriceView(APIView):
             },
         )
         return Response(ProductVariantSerializer(variant).data)
+
+
+# ============================================================================
+# Supplier Management Endpoints
+# ============================================================================
+
+
+class SupplierListCreateView(generics.ListCreateAPIView):
+    """List all suppliers or create a new supplier."""
+    queryset = Supplier.objects.filter(is_active=True).order_by("name_uz")
+    serializer_class = SupplierSerializer
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    pagination_class = CatalogPagination
+
+
+class SupplierDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Retrieve, update, or soft-delete a supplier."""
+    queryset = Supplier.objects.all()
+    serializer_class = SupplierSerializer
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    
+    def perform_destroy(self, instance):
+        instance.is_active = False
+        instance.save()
+
+
+class SupplierTransactionListView(generics.ListCreateAPIView):
+    """List transactions for a supplier or record a new transaction."""
+    serializer_class = SupplierTransactionSerializer
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    pagination_class = CatalogPagination
+    
+    def get_queryset(self):
+        supplier_id = self.kwargs.get("supplier_id")
+        return SupplierTransaction.objects.filter(supplier_id=supplier_id).order_by("-created_at")
+    
+    def perform_create(self, serializer):
+        supplier_id = self.kwargs.get("supplier_id")
+        serializer.save(recorded_by=self.request.user)
+
+
+class SupplierBalanceView(APIView):
+    """Get balance summary for all suppliers."""
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    
+    def get(self, request):
+        from .supplier_services import get_all_suppliers_balance
+        from .serializers import SupplierBalanceSerializer
+        
+        balances = get_all_suppliers_balance()
+        serializer = SupplierBalanceSerializer(balances, many=True)
+        return Response(serializer.data)
+
+
+class SingleSupplierBalanceView(APIView):
+    """Get balance for a specific supplier."""
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    
+    def get(self, request, supplier_id):
+        from .supplier_services import get_supplier_balance
+        from .serializers import SupplierBalanceSerializer
+        
+        try:
+            supplier = Supplier.objects.get(id=supplier_id)
+        except Supplier.DoesNotExist:
+            return Response({"code": "SUPPLIER_NOT_FOUND", "detail": "Supplier not found."}, status=404)
+        
+        balance_info = get_supplier_balance(supplier_id)
+        data = {
+            "supplier_id": supplier.id,
+            "supplier_name_uz": supplier.name_uz,
+            "supplier_name_ru": supplier.name_ru,
+            **balance_info,
+        }
+        serializer = SupplierBalanceSerializer(data)
+        return Response(serializer.data)
+
+
+class LowStockListView(APIView):
+    """Get all products with low stock, with optional filtering."""
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    
+    def get(self, request):
+        from .low_stock import get_low_stock_summary
+        
+        # Get aggregation type from query params
+        aggregation = request.query_params.get("aggregation", "summary").lower()
+        # summary, variants, by_brand, by_model
+        
+        summary = get_low_stock_summary()
+        
+        if aggregation == "variants":
+            return Response({"results": summary["variants"]})
+        elif aggregation == "by_brand":
+            return Response({"results": summary["by_brand"]})
+        elif aggregation == "by_model":
+            return Response({"results": summary["by_model"]})
+        else:
+            # Default: summary
+            return Response(summary)
+
+
+class LowStockByBrandView(APIView):
+    """Get low stock aggregated by brand (category)."""
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    
+    def get(self, request):
+        from .low_stock import get_low_stock_by_brand
+        
+        results = get_low_stock_by_brand()
+        return Response({"results": results})
+
+
+class LowStockByModelView(APIView):
+    """Get low stock aggregated by model (product)."""
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    
+    def get(self, request):
+        from .low_stock import get_low_stock_by_model
+        
+        results = get_low_stock_by_model()
+        return Response({"results": results})
+
+
+# ============================================================================
+# Phase 4: Product Specifications Endpoints
+# ============================================================================
+
+
+class ProductSpecificationView(APIView):
+    """Get or update product specifications."""
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    
+    def get(self, request, product_id):
+        from .specification_services import get_specification
+        from .serializers import ProductSpecificationSerializer
+        
+        spec = get_specification(product_id)
+        if not spec:
+            return Response({"code": "SPEC_NOT_FOUND", "detail": "Specifications not found."}, status=404)
+        
+        serializer = ProductSpecificationSerializer(spec)
+        return Response(serializer.data)
+    
+    def put(self, request, product_id):
+        from .specification_services import update_specification
+        from .serializers import ProductSpecificationSerializer
+        
+        try:
+            Product.objects.get(id=product_id)
+        except Product.DoesNotExist:
+            return Response({"code": "PRODUCT_NOT_FOUND", "detail": "Product not found."}, status=404)
+        
+        spec = update_specification(product_id, **request.data)
+        serializer = ProductSpecificationSerializer(spec)
+        
+        log_audit(
+            event_type="product_spec_updated",
+            actor=request.user.username if request.user else None,
+            entity_id=str(product_id),
+            payload={"specifications": request.data},
+        )
+        
+        return Response(serializer.data)
+    
+    def delete(self, request, product_id):
+        from .specification_services import delete_specification
+        
+        deleted = delete_specification(product_id)
+        if not deleted:
+            return Response({"code": "SPEC_NOT_FOUND", "detail": "Specifications not found."}, status=404)
+        
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ProductSpecificationListView(generics.ListAPIView):
+    """List all product specifications."""
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    pagination_class = CatalogPagination
+    
+    def get(self, request):
+        from .models import ProductSpecification
+        from .serializers import ProductSpecificationSerializer
+        
+        qs = ProductSpecification.objects.select_related('product__category').order_by('product__name_uz')
+        
+        # Optional filters
+        energy_class = request.query_params.get('energy_class')
+        if energy_class:
+            qs = qs.filter(energy_class__iexact=energy_class)
+        
+        capacity = request.query_params.get('capacity')
+        if capacity:
+            qs = qs.filter(capacity__icontains=capacity)
+        
+        serializer = ProductSpecificationSerializer(qs, many=True)
+        return Response({"results": serializer.data})
+
+
+class ProductsWithoutSpecsView(APIView):
+    """Get all products that don't have specifications defined."""
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    
+    def get(self, request):
+        from .specification_services import get_products_without_specifications
+        
+        products = get_products_without_specifications()
+        serializer = ProductSerializer(products, many=True)
+        return Response({"results": serializer.data})
+
+
+class SpecificationSummaryView(APIView):
+    """Get summary statistics for product specifications."""
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    
+    def get(self, request):
+        from .specification_services import get_specification_summary
+        
+        summary = get_specification_summary()
+        return Response(summary)
+
+
+# ============================================================================
+# Phase 4: Serial Number & Warranty Tracking Endpoints
+# ============================================================================
+
+
+class SerialNumberListCreateView(generics.ListCreateAPIView):
+    """List serial numbers or create a new one."""
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    pagination_class = CatalogPagination
+    
+    def get_queryset(self):
+        from .models import SerialNumber
+        from .serial_services import search_serial_numbers
+        
+        # Get filter parameters
+        query = self.request.query_params.get('q')
+        status_filter = self.request.query_params.get('status')
+        variant_id = self.request.query_params.get('variant_id')
+        product_id = self.request.query_params.get('product_id')
+        category_id = self.request.query_params.get('category_id')
+        warranty_status = self.request.query_params.get('warranty_status')
+        
+        return search_serial_numbers(
+            query=query,
+            status=status_filter,
+            variant_id=variant_id,
+            product_id=product_id,
+            category_id=category_id,
+            warranty_status=warranty_status
+        )
+    
+    def get_serializer_class(self):
+        from .serializers import SerialNumberSerializer
+        return SerialNumberSerializer
+    
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+
+class SerialNumberDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Retrieve, update, or delete a serial number."""
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    
+    def get_queryset(self):
+        from .models import SerialNumber
+        return SerialNumber.objects.select_related('variant__product__category', 'sale_line__sale')
+    
+    def get_serializer_class(self):
+        from .serializers import SerialNumberSerializer
+        return SerialNumberSerializer
+
+
+class SerialNumberBulkCreateView(APIView):
+    """Bulk create serial numbers for a variant."""
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    
+    def post(self, request):
+        from .serial_services import bulk_create_serial_numbers
+        from .serializers import SerialNumberCreateSerializer, SerialNumberSerializer
+        
+        serializer = SerialNumberCreateSerializer(data=request.data, many=True)
+        serializer.is_valid(raise_exception=True)
+        
+        # Group by variant_id for efficient bulk creation
+        by_variant = {}
+        for item in serializer.validated_data:
+            variant_id = str(item['variant_id'])
+            if variant_id not in by_variant:
+                by_variant[variant_id] = {
+                    'serial_numbers': [],
+                    'warranty_months': item.get('warranty_months', 12),
+                    'purchase_date': item.get('purchase_date'),
+                    'notes': item.get('notes', '')
+                }
+            by_variant[variant_id]['serial_numbers'].append(item['serial_number'])
+        
+        created_all = []
+        for variant_id, data in by_variant.items():
+            created = bulk_create_serial_numbers(
+                variant_id=variant_id,
+                serial_numbers=data['serial_numbers'],
+                warranty_months=data['warranty_months'],
+                purchase_date=data['purchase_date'],
+                user_id=str(request.user.id)
+            )
+            created_all.extend(created)
+        
+        log_audit(
+            event_type="serial_numbers_bulk_created",
+            actor=request.user.username if request.user else None,
+            entity_id=None,
+            payload={"count": len(created_all)},
+        )
+        
+        result_serializer = SerialNumberSerializer(created_all, many=True)
+        return Response(result_serializer.data, status=status.HTTP_201_CREATED)
+
+
+class SerialNumberByCodeView(APIView):
+    """Look up a serial number by its code."""
+    permission_classes = [IsAuthenticated, IsCashier]
+    
+    def get(self, request):
+        from .serial_services import get_serial_number_by_code
+        from .serializers import SerialNumberSerializer
+        
+        code = request.query_params.get('code', '').strip()
+        if not code:
+            return Response({"code": "CODE_REQUIRED", "detail": "Serial number code is required."}, status=400)
+        
+        serial = get_serial_number_by_code(code)
+        if not serial:
+            return Response({"code": "SERIAL_NOT_FOUND", "detail": "Serial number not found."}, status=404)
+        
+        serializer = SerialNumberSerializer(serial)
+        return Response(serializer.data)
+
+
+class WarrantiesExpiringView(APIView):
+    """Get warranties expiring within a specified number of days."""
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    
+    def get(self, request):
+        from .serial_services import get_warranties_expiring_soon
+        from .serializers import WarrantyExpiringSerializer
+        
+        days = int(request.query_params.get('days', 30))
+        results = get_warranties_expiring_soon(days=days)
+        serializer = WarrantyExpiringSerializer(results, many=True)
+        return Response({"results": serializer.data, "days": days})
+
+
+class WarrantiesExpiredView(APIView):
+    """Get warranties that expired within the last N days."""
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    
+    def get(self, request):
+        from .serial_services import get_expired_warranties
+        
+        days_ago = int(request.query_params.get('days_ago', 30))
+        results = get_expired_warranties(days_ago=days_ago)
+        return Response({"results": results, "days_ago": days_ago})
+
+
+class SerialNumberStatsView(APIView):
+    """Get overall statistics for serial number tracking."""
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    
+    def get(self, request):
+        from .serial_services import get_serial_number_stats
+        
+        stats = get_serial_number_stats()
+        return Response(stats)
+
+
+class MarkSerialAsSoldView(APIView):
+    """Mark a serial number as sold (used during sale completion)."""
+    permission_classes = [IsAuthenticated, IsCashier]
+    
+    def post(self, request, serial_id):
+        from .serial_services import mark_serial_as_sold
+        from .serializers import SerialNumberSerializer
+        
+        sale_line_id = request.data.get('sale_line_id')
+        sale_date = request.data.get('sale_date')
+        
+        if not sale_line_id:
+            return Response({"code": "SALE_LINE_REQUIRED", "detail": "sale_line_id is required."}, status=400)
+        
+        try:
+            serial = mark_serial_as_sold(serial_id, sale_line_id, sale_date)
+            serializer = SerialNumberSerializer(serial)
+            return Response(serializer.data)
+        except Exception as e:
+            return Response({"code": "ERROR", "detail": str(e)}, status=400)
+
+
+class MarkSerialAsReturnedView(APIView):
+    """Mark a serial number as returned."""
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    
+    def post(self, request, serial_id):
+        from .serial_services import mark_serial_as_returned
+        from .serializers import SerialNumberSerializer
+        
+        try:
+            serial = mark_serial_as_returned(serial_id)
+            serializer = SerialNumberSerializer(serial)
+            return Response(serializer.data)
+        except Exception as e:
+            return Response({"code": "ERROR", "detail": str(e)}, status=400)
+
+
+class MarkSerialAsDefectiveView(APIView):
+    """Mark a serial number as defective."""
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    
+    def post(self, request, serial_id):
+        from .serial_services import mark_serial_as_defective
+        from .serializers import SerialNumberSerializer
+        
+        notes = request.data.get('notes', '')
+        
+        try:
+            serial = mark_serial_as_defective(serial_id, notes)
+            serializer = SerialNumberSerializer(serial)
+            return Response(serializer.data)
+        except Exception as e:
+            return Response({"code": "ERROR", "detail": str(e)}, status=400)

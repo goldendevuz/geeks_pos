@@ -1,7 +1,7 @@
 import pytest
 from django.contrib.auth.models import User
 
-from catalog.models import Category, Color, Product, ProductVariant, Size
+from catalog.models import Category, Product, ProductVariant
 from catalog.search import variant_text_search_q
 
 
@@ -14,13 +14,11 @@ def test_variant_text_search_matches_category_name(client):
   color = Color.objects.create(value="blk", label_uz="Qora", label_ru="Чёрный")
   ProductVariant.objects.create(
       product=prod,
-      size=size,
-      color=color,
+      size=sizeor,
       barcode="900001",
       purchase_price="10000",
       list_price="15000",
-      stock_qty=3,
-  )
+      stock_qty=3)
   qs = ProductVariant.objects.filter(variant_text_search_q("Nike"))
   assert qs.count() == 1
   qs2 = ProductVariant.objects.filter(variant_text_search_q("Air"))

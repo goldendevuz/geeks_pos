@@ -9,7 +9,7 @@ from rest_framework.test import APIClient
 from debt.models import Customer
 from sales.models import Sale
 from sales.services import complete_sale
-from catalog.models import Category, Color, Product, ProductVariant, Size
+from catalog.models import Category, Product, ProductVariant
 from printing.models import StoreSettings
 from printing.receipt import round_som, sale_to_receipt_dict, transliterate_uz
 
@@ -47,19 +47,13 @@ def test_barcode_endpoint_accessible_to_cashier(client):
 
 
 def _mk_variant(stock_qty: int = 10, barcode: str = "") -> ProductVariant:
-    cat = Category.objects.create(name_uz="Kiyim", name_ru="Одежда")
-    sz = Size.objects.create(value="42", label_uz="42", label_ru="42", sort_order=1)
-    col = Color.objects.create(value="BLACK-PERM", label_uz="Qora", label_ru="Черный", sort_order=1)
-    prod = Product.objects.create(category=cat, name_uz="Keta", name_ru="Кеды")
+    cat = Category.objects.create(name_uz="Kiyim", name_ru="Одежда")    prod = Product.objects.create(category=cat, name_uz="Keta", name_ru="Кеды")
     return ProductVariant.objects.create(
         product=prod,
-        size=sz,
-        color=col,
         purchase_price=Decimal("100000.00"),
         list_price=Decimal("150000.00"),
         stock_qty=stock_qty,
-        barcode=barcode or "",
-    )
+        barcode=barcode or "")
 
 
 @pytest.mark.django_db
@@ -74,15 +68,13 @@ def test_sale_void_own_allowed_blocked_for_other_cashier():
         cashier=a,
         lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
         payments=[{"method": "CASH", "amount": "150000.00"}],
-        customer=None,
-    )
+        customer=None)
     sale_other = complete_sale(
         idempotency_key="void-other-block",
         cashier=b,
         lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
         payments=[{"method": "CASH", "amount": "150000.00"}],
-        customer=None,
-    )
+        customer=None)
 
     api = APIClient()
     api.force_authenticate(user=a)
@@ -102,8 +94,7 @@ def test_debt_endpoints_cashier_allowed(client, monkeypatch):
         cashier=cashier,
         lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
         payments=[{"method": "DEBT", "amount": "150000.00"}],
-        customer={"name": "Ali", "phone_normalized": "998900000111"},
-    )
+        customer={"name": "Ali", "phone_normalized": "998900000111"})
     customer = Customer.objects.get(phone_normalized="998900000111")
 
     assert client.get("/api/debt/customers/search/?q=ali").status_code == 200
@@ -112,16 +103,14 @@ def test_debt_endpoints_cashier_allowed(client, monkeypatch):
         client.post(
             "/api/debt/customers/",
             data={"name": "Vali", "phone_normalized": "998900000222"},
-            content_type="application/json",
-        ).status_code
+            content_type="application/json").status_code
         == 201
     )
     assert (
         client.patch(
             f"/api/debt/customers/{customer.id}/",
             data={"name": "Ali2", "phone_normalized": "998900000111"},
-            content_type="application/json",
-        ).status_code
+            content_type="application/json").status_code
         == 200
     )
     monkeypatch.setattr("integrations.services.send_whatsapp_reminder", lambda **kwargs: {"ok": True})
@@ -129,8 +118,7 @@ def test_debt_endpoints_cashier_allowed(client, monkeypatch):
         client.post(
             "/api/debt/payments/",
             data={"customer_id": str(customer.id), "amount": "100"},
-            content_type="application/json",
-        ).status_code
+            content_type="application/json").status_code
         == 200
     )
 
@@ -146,8 +134,7 @@ def test_debt_endpoints_owner_allowed(client, monkeypatch):
         cashier=cashier,
         lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
         payments=[{"method": "DEBT", "amount": "150000.00"}],
-        customer={"name": "Aziza", "phone_normalized": "998900000333"},
-    )
+        customer={"name": "Aziza", "phone_normalized": "998900000333"})
     customer = Customer.objects.get(phone_normalized="998900000333")
 
     assert client.get("/api/debt/customers/search/?q=azi").status_code == 200
@@ -156,16 +143,14 @@ def test_debt_endpoints_owner_allowed(client, monkeypatch):
         client.post(
             "/api/debt/customers/",
             data={"name": "Nodira", "phone_normalized": "998900000444"},
-            content_type="application/json",
-        ).status_code
+            content_type="application/json").status_code
         == 201
     )
     assert (
         client.patch(
             f"/api/debt/customers/{customer.id}/",
             data={"name": "Aziza Updated", "phone_normalized": "998900000335"},
-            content_type="application/json",
-        ).status_code
+            content_type="application/json").status_code
         == 200
     )
     captured = {}
@@ -177,8 +162,7 @@ def test_debt_endpoints_owner_allowed(client, monkeypatch):
         "/api/debt/payments/",
         data={"customer_id": str(customer.id), "amount": "100"},
         content_type="application/json",
-        HTTP_ACCEPT_LANGUAGE="ru",
-    )
+        HTTP_ACCEPT_LANGUAGE="ru")
     assert res.status_code == 200
     assert captured.get("reminder_kind") == "repayment_update"
     assert captured.get("lang") == "ru"
@@ -197,22 +181,19 @@ def test_sales_history_cashier_only_own_today(client):
         cashier=cashier,
         lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
         payments=[{"method": "CASH", "amount": "150000.00"}],
-        customer=None,
-    )
+        customer=None)
     complete_sale(
         idempotency_key="hist-2",
         cashier=other,
         lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
         payments=[{"method": "CASH", "amount": "150000.00"}],
-        customer=None,
-    )
+        customer=None)
     old_sale = complete_sale(
         idempotency_key="hist-3",
         cashier=cashier,
         lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
         payments=[{"method": "CASH", "amount": "150000.00"}],
-        customer=None,
-    )
+        customer=None)
     Sale.objects.filter(pk=old_sale.pk).update(completed_at=timezone.now() - timedelta(days=1))
 
     client.force_login(cashier)
@@ -234,15 +215,13 @@ def test_sales_history_owner_sees_all(client):
         cashier=cashier,
         lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
         payments=[{"method": "CASH", "amount": "150000.00"}],
-        customer=None,
-    )
+        customer=None)
     complete_sale(
         idempotency_key="hist-owner-2",
         cashier=other,
         lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
         payments=[{"method": "CASH", "amount": "150000.00"}],
-        customer=None,
-    )
+        customer=None)
     client.force_login(owner)
     resp = client.get("/api/sales/")
     assert resp.status_code == 200
@@ -259,8 +238,7 @@ def test_sale_detail_and_receipt_block_cross_cashier_access(client):
         cashier=other,
         lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
         payments=[{"method": "CASH", "amount": "150000.00"}],
-        customer=None,
-    )
+        customer=None)
     client.force_login(cashier)
     assert client.get(f"/api/sales/{sale.id}/").status_code == 403
     assert client.get(f"/api/printing/receipt/{sale.id}/").status_code == 403
@@ -283,8 +261,7 @@ def test_sale_receipt_dict_respects_receipt_lang_setting():
         cashier=cashier,
         lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
         payments=[{"method": "CASH", "amount": "150000.00"}],
-        customer=None,
-    )
+        customer=None)
     settings = StoreSettings.get_solo()
     settings.receipt_lang = "uz"
     settings.save(update_fields=["receipt_lang"])

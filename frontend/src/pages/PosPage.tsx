@@ -118,6 +118,8 @@ export function PosPage({
   const scanDupBlockRef = useRef<string | null>(null)
   const [buffer, setBuffer] = useState('')
   const [toast, setToast] = useState<{ kind: 'err' | 'ok'; msg: string; muteSound?: boolean } | null>(null)
+  const [promptPriceVariant, setPromptPriceVariant] = useState<null | PosVariant>(null)
+  const [promptPriceBuf, setPromptPriceBuf] = useState('0')
   const [banner, setBanner] = useState<string | null>(null)
   const [scanFlash, setScanFlash] = useState(false)
   const [cartFlash, setCartFlash] = useState(false)
@@ -294,7 +296,7 @@ export function PosPage({
       return
     }
     setMatrixBusy(true)
-    void fetchPosVariantsByProduct(stockMatrix.productId, stockMatrix.colorId)
+    void fetchPosVariantsByProduct(stockMatrix.productId)
       .then(setMatrixRows)
       .catch(() => {
         setMatrixRows([])
@@ -526,16 +528,22 @@ export function PosPage({
 
   function addVariantToCart(v: PosVariant, opts?: { clearSearch?: boolean }) {
     const productName = i18n.language.startsWith('ru') ? v.product_name_ru || v.product_name_uz : v.product_name_uz
-    const sizeLabel = i18n.language.startsWith('ru') ? v.size_label_ru || v.size_label_uz : v.size_label_uz
-    const colorLabel = i18n.language.startsWith('ru') ? v.color_label_ru || v.color_label_uz : v.color_label_uz
+    const customName = i18n.language.startsWith('ru') ? v.product_custom_name_ru || v.product_custom_name_uz : v.product_custom_name_uz
+    // If variant has no authoritative list price, prompt cashier for sale-time price.
+    if (v.list_price == null) {
+      setPromptPriceVariant(v as any)
+      setPromptPriceBuf('0')
+      return
+    }
+
     addLine({
       variantId: v.id,
       productId: v.product,
-      colorId: v.color,
+      colorId: '',
       barcode: v.barcode ?? '',
-      name: productName,
-      sizeLabel,
-      colorLabel,
+      name: customName || productName,
+      sizeLabel: '',
+      colorLabel: '',
       listPrice: String(v.list_price),
       stockQty: Number(v.stock_qty || 0),
       qty: 1,
@@ -628,6 +636,7 @@ export function PosPage({
         variant_id: l.variantId,
         qty: l.qty,
         line_discount: '0',
+        unit_price: parseSom(l.listPrice).toString(),
       }))
       const payments = pays.map((p) => ({ method: p.method, amount: p.amount.toString() }))
       const customer = hasDebt
@@ -1092,14 +1101,7 @@ export function PosPage({
                         : v.product_name_uz}
                     </div>
                     <div className="text-xs text-slate-400">
-                      {(i18n.language.startsWith('ru')
-                        ? v.color_label_ru || v.color_label_uz
-                        : v.color_label_uz)}{' '}
-                      /{' '}
-                      {(i18n.language.startsWith('ru')
-                        ? v.size_label_ru || v.size_label_uz
-                        : v.size_label_uz)}{' '}
-                      · {formatMoney(String(v.list_price))} ·{' '}
+                      {formatMoney(String(v.list_price))} ·{' '}
                       {t('admin.catalog.stock')}: {v.stock_qty}
                     </div>
                     {v.barcode ? <div className="text-xs text-slate-500 font-mono mt-0.5">{v.barcode}</div> : null}
@@ -1497,6 +1499,52 @@ export function PosPage({
           </div>
         </div>
       )}
+      {promptPriceVariant && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto overscroll-contain bg-black/60 p-4">
+          <div className="my-auto w-full max-w-md max-h-[min(90dvh,90svh)] overflow-y-auto rounded border border-slate-700 bg-slate-900 p-4 space-y-3 kiosk-scrollbar">
+            <h3 className="text-lg font-semibold">{i18n.language.startsWith('ru') ? promptPriceVariant.product_name_ru || promptPriceVariant.product_name_uz : promptPriceVariant.product_name_uz}</h3>
+            <div className="text-sm text-slate-400">{t('pos.enterSalePrice')}</div>
+            <div className="rounded-xl bg-slate-950 border border-slate-700 p-3 space-y-2">
+              <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{t('common.valueEditing')}</div>
+              <div className="w-full min-h-12 px-3 py-2.5 rounded-xl bg-slate-900 border border-emerald-700/50 ring-1 ring-emerald-500/25 text-right text-xl font-semibold tabular-nums text-emerald-100">
+                {formatMoney(promptPriceBuf)}
+              </div>
+              <TouchNumpad value={(promptPriceBuf || '0').replace(/\D/g, '') || '0'} onChange={setPromptPriceBuf} />
+            </div>
+            <div className="flex justify-end gap-3">
+              <button type="button" className="touch-btn min-h-12 px-5 rounded-xl bg-slate-800 border border-slate-600" onClick={() => { setPromptPriceVariant(null); setPromptPriceBuf('0'); safeRefocus(); }}>
+                {t('admin.common.cancel')}
+              </button>
+              <button type="button" className="touch-btn min-h-12 px-5 rounded-xl bg-emerald-700 border border-emerald-500" onClick={() => {
+                try {
+                  const price = String(parseSom(promptPriceBuf))
+                  addLine({
+                    variantId: promptPriceVariant.id,
+                    productId: promptPriceVariant.product,
+                    colorId: '',
+                    barcode: promptPriceVariant.barcode ?? '',
+                    name: i18n.language.startsWith('ru') ? promptPriceVariant.product_name_ru || promptPriceVariant.product_name_uz : promptPriceVariant.product_name_uz,
+                    sizeLabel: '',
+                    colorLabel: '',
+                    listPrice: price,
+                    stockQty: Number(promptPriceVariant.stock_qty || 0),
+                    qty: 1,
+                  })
+                  beepOk()
+                  setCartFlash(true)
+                  setTimeout(() => setCartFlash(false), 240)
+                } finally {
+                  setPromptPriceVariant(null)
+                  setPromptPriceBuf('0')
+                  safeRefocus()
+                }
+              }}>
+                {t('admin.common.save')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {stockMatrix && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-black/60 p-4"
@@ -1541,8 +1589,8 @@ export function PosPage({
                         <td className="p-3">
                           <div className="font-medium">
                             {i18n.language.startsWith('ru')
-                              ? r.size_label_ru || r.size_label_uz
-                              : r.size_label_uz}
+                              ? r.product_name_ru || r.product_name_uz
+                              : r.product_name_uz}
                           </div>
                           {r.barcode ? <div className="text-xs text-slate-500 font-mono">{r.barcode}</div> : null}
                         </td>

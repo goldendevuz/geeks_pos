@@ -14,6 +14,13 @@ class SaleLineInSerializer(serializers.Serializer):
         required=False,
         default=Decimal("0"),
     )
+    unit_price = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        help_text="Optional: override variant list_price at sale time. Required if variant has no list_price."
+    )
 
 
 class PaymentInSerializer(serializers.Serializer):

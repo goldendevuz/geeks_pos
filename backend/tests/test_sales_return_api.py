@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
-from catalog.models import Category, Color, Product, ProductVariant, Size
+from catalog.models import Category, Product, ProductVariant
 from sales.models import SaleRefund
 from sales.services import complete_sale
 
@@ -17,19 +17,13 @@ def _mk_user(username: str, role: str) -> User:
 
 
 def _mk_variant(*, barcode: str = "BC-RETURN-TEST", stock_qty: int = 10) -> ProductVariant:
-    cat = Category.objects.create(name_uz="Kiyim", name_ru="Одежда")
-    sz = Size.objects.create(value="42", label_uz="42", label_ru="42", sort_order=1)
-    col = Color.objects.create(value="BLACK-R", label_uz="Qora", label_ru="Черный", sort_order=1)
-    prod = Product.objects.create(category=cat, name_uz="Keta", name_ru="Кеды")
+    cat = Category.objects.create(name_uz="Kiyim", name_ru="Одежда")    prod = Product.objects.create(category=cat, name_uz="Keta", name_ru="Кеды")
     return ProductVariant.objects.create(
         product=prod,
-        size=sz,
-        color=col,
         purchase_price=Decimal("100000.00"),
         list_price=Decimal("150000.00"),
         stock_qty=stock_qty,
-        barcode=barcode,
-    )
+        barcode=barcode)
 
 
 @pytest.mark.django_db
@@ -41,8 +35,7 @@ def test_sale_return_search_by_barcode_and_qty_guard():
         cashier=cashier,
         lines=[{"variant_id": str(variant.id), "qty": 2, "line_discount": "0"}],
         payments=[{"method": "CASH", "amount": "300000.00"}],
-        customer=None,
-    )
+        customer=None)
     api = APIClient()
     api.force_authenticate(user=cashier)
     sr = api.get("/api/sales/search/return/?q=BC-QTY-GUARD")
@@ -58,22 +51,19 @@ def test_sale_return_search_by_barcode_and_qty_guard():
     over = api.post(
         f"/api/sales/{sale.id}/return/",
         data={"lines": [{"variant_id": vid, "qty": 5}], "reason": "too many"},
-        format="json",
-    )
+        format="json")
     assert over.status_code == 400
 
     ok = api.post(
         f"/api/sales/{sale.id}/return/",
         data={"lines": [{"variant_id": vid, "qty": 1}], "reason": "partial"},
-        format="json",
-    )
+        format="json")
     assert ok.status_code == 200
 
     over2 = api.post(
         f"/api/sales/{sale.id}/return/",
         data={"lines": [{"variant_id": vid, "qty": 2}], "reason": "second"},
-        format="json",
-    )
+        format="json")
     assert over2.status_code == 400
 
 
@@ -86,8 +76,7 @@ def test_sale_return_search_hides_fully_returned_sale():
         cashier=cashier,
         lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
         payments=[{"method": "CASH", "amount": "150000.00"}],
-        customer=None,
-    )
+        customer=None)
     api = APIClient()
     api.force_authenticate(user=cashier)
     rl = api.get(f"/api/sales/{sale.id}/return-lines/")
@@ -95,8 +84,7 @@ def test_sale_return_search_hides_fully_returned_sale():
     ret = api.post(
         f"/api/sales/{sale.id}/return/",
         data={"lines": [{"variant_id": vid, "qty": 1}], "reason": "full"},
-        format="json",
-    )
+        format="json")
     assert ret.status_code == 200
 
     sr = api.get("/api/sales/search/return/?q=BC-FULL-HIDE")
@@ -118,8 +106,7 @@ def test_return_lines_blocked_for_other_cashier():
         cashier=a,
         lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
         payments=[{"method": "CASH", "amount": "150000.00"}],
-        customer=None,
-    )
+        customer=None)
     api = APIClient()
     api.force_authenticate(user=b)
     assert api.get(f"/api/sales/{sale.id}/return-lines/").status_code == 403
@@ -134,8 +121,7 @@ def test_sale_return_search_and_lines_include_extended_fields():
         cashier=cashier,
         lines=[{"variant_id": str(variant.id), "qty": 2, "line_discount": "0"}],
         payments=[{"method": "CARD", "amount": "300000.00"}],
-        customer=None,
-    )
+        customer=None)
     api = APIClient()
     api.force_authenticate(user=cashier)
     sr = api.get("/api/sales/search/return/?q=BC-DETAIL-1")
@@ -176,8 +162,7 @@ def test_sale_return_creates_cash_refund_and_net_dashboard():
         cashier=cashier,
         lines=[{"variant_id": str(variant.id), "qty": 2, "line_discount": "0"}],
         payments=[{"method": "CASH", "amount": "300000.00"}],
-        customer=None,
-    )
+        customer=None)
     api = APIClient()
     api.force_authenticate(user=cashier)
     rl = api.get(f"/api/sales/{sale.id}/return-lines/")
@@ -187,8 +172,7 @@ def test_sale_return_creates_cash_refund_and_net_dashboard():
     ok = api.post(
         f"/api/sales/{sale.id}/return/",
         data={"lines": [{"variant_id": vid, "qty": 1}], "reason": "refund test", "auto_refund": True},
-        format="json",
-    )
+        format="json")
     assert ok.status_code == 200
     body = ok.json()
     assert body["return_amount"] == "150000"
@@ -212,8 +196,7 @@ def test_sale_return_manual_refund_must_match_amount():
         cashier=cashier,
         lines=[{"variant_id": str(variant.id), "qty": 1, "line_discount": "0"}],
         payments=[{"method": "CASH", "amount": "150000.00"}],
-        customer=None,
-    )
+        customer=None)
     api = APIClient()
     api.force_authenticate(user=cashier)
     vid = api.get(f"/api/sales/{sale.id}/return-lines/").json()["lines"][0]["variant_id"]
@@ -224,8 +207,7 @@ def test_sale_return_manual_refund_must_match_amount():
             "auto_refund": False,
             "refunds": [{"method": "CASH", "amount": "100000"}],
         },
-        format="json",
-    )
+        format="json")
     assert bad.status_code == 400
     assert bad.json()["code"] == "RETURN_REFUND_MISMATCH"
 

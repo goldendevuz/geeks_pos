@@ -88,7 +88,7 @@ function VariantSearchPicker(props: {
                 {t('admin.catalog.barcode')}: <span className="text-slate-200 font-mono">{picked.barcode ?? '—'}</span>
               </div>
               <div className="text-sm text-slate-400">
-                {picked.size_label_uz} / {picked.color_label_uz} · {t('admin.inventory.currentStock')}:{' '}
+                {t('admin.inventory.currentStock')}:{' '}
                 <span className="font-semibold text-slate-100 tabular-nums">{picked.stock_qty}</span>
               </div>
             </div>
@@ -125,8 +125,6 @@ function VariantSearchPicker(props: {
                   ) : null}
                   <div className="text-xs text-slate-400">
                     <span className="font-mono">{v.barcode ?? '—'}</span>
-                    {' · '}
-                    {v.size_label_uz} / {v.color_label_uz}
                     {' · '}
                     <span className="tabular-nums">{v.stock_qty}</span>
                   </div>

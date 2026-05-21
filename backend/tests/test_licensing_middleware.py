@@ -23,7 +23,7 @@ def test_health_always_allowed_under_license_enforcement(client):
 
 @pytest.mark.django_db
 def test_sales_complete_blocked_when_license_enforced_and_invalid(client):
-    from catalog.models import Category, Color, Product, ProductVariant, Size
+    from catalog.models import Category, Product, ProductVariant
     from decimal import Decimal
 
     from licensing.models import LicenseState
@@ -32,18 +32,12 @@ def test_sales_complete_blocked_when_license_enforced_and_invalid(client):
     LicenseState.objects.all().delete()
 
     cashier = _mk_user("cashier_lic", "CASHIER")
-    cat = Category.objects.create(name_uz="K", name_ru="K")
-    sz = Size.objects.create(value="42", label_uz="42", label_ru="42", sort_order=1)
-    col = Color.objects.create(value="B", label_uz="Q", label_ru="Q", sort_order=1)
-    prod = Product.objects.create(category=cat, name_uz="P", name_ru="P")
+    cat = Category.objects.create(name_uz="K", name_ru="K")    prod = Product.objects.create(category=cat, name_uz="P", name_ru="P")
     variant = ProductVariant.objects.create(
         product=prod,
-        size=sz,
-        color=col,
         purchase_price=Decimal("1"),
         list_price=Decimal("10"),
-        stock_qty=5,
-    )
+        stock_qty=5)
     client = APIClient()
     client.force_authenticate(user=cashier)
 
@@ -56,36 +50,28 @@ def test_sales_complete_blocked_when_license_enforced_and_invalid(client):
                 "expected_grand_total": "10",
             },
             format="json",
-            HTTP_IDEMPOTENCY_KEY="lic-block-1",
-        )
+            HTTP_IDEMPOTENCY_KEY="lic-block-1")
     assert r.status_code == 403
     assert r.json().get("code") == "LICENSE_EXPIRED"
 
 
 @pytest.mark.django_db
 def test_sales_complete_allowed_when_license_valid(client):
-    from catalog.models import Category, Color, Product, ProductVariant, Size
+    from catalog.models import Category, Product, ProductVariant
     from decimal import Decimal
 
     cashier = _mk_user("cashier_lic_ok", "CASHIER")
-    cat = Category.objects.create(name_uz="K2", name_ru="K2")
-    sz = Size.objects.create(value="43", label_uz="43", label_ru="43", sort_order=1)
-    col = Color.objects.create(value="B2", label_uz="Q", label_ru="Q", sort_order=1)
-    prod = Product.objects.create(category=cat, name_uz="P2", name_ru="P2")
+    cat = Category.objects.create(name_uz="K2", name_ru="K2")    prod = Product.objects.create(category=cat, name_uz="P2", name_ru="P2")
     variant = ProductVariant.objects.create(
         product=prod,
-        size=sz,
-        color=col,
         purchase_price=Decimal("1"),
         list_price=Decimal("10"),
-        stock_qty=5,
-    )
+        stock_qty=5)
     apply_activation_success(
         hardware_id="hw-test-1",
         license_key="KEY",
         expires_at_iso="2099-12-31",
-        raw_json="{}",
-    )
+        raw_json="{}")
     client = APIClient()
     client.force_authenticate(user=cashier)
 
@@ -98,8 +84,7 @@ def test_sales_complete_allowed_when_license_valid(client):
                 "expected_grand_total": "10",
             },
             format="json",
-            HTTP_IDEMPOTENCY_KEY="lic-ok-1",
-        )
+            HTTP_IDEMPOTENCY_KEY="lic-ok-1")
     assert r.status_code == 200
 
 

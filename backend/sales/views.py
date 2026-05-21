@@ -41,12 +41,10 @@ def _request_lang(request) -> str:
 
 
 def _return_preview_line_dict(ln: SaleLine) -> dict:
-    """Vozvrat qidiruvi / qatorlar uchun sotilgan pozitsiya (variant + narx)."""
+    """Return preview line dict for return search - simplified for appliances."""
     v = ln.variant
     p = v.product
     cat = getattr(p, "category", None)
-    sz = getattr(v, "size", None)
-    col = getattr(v, "color", None)
 
     def _safe(obj, uz_attr: str, ru_attr: str) -> tuple[str, str]:
         if not obj:
@@ -57,8 +55,6 @@ def _return_preview_line_dict(ln: SaleLine) -> dict:
         )
 
     cat_uz, cat_ru = _safe(cat, "name_uz", "name_ru")
-    sz_uz, sz_ru = _safe(sz, "label_uz", "label_ru")
-    col_uz, col_ru = _safe(col, "label_uz", "label_ru")
 
     return {
         "variant_id": str(v.id),
@@ -67,10 +63,6 @@ def _return_preview_line_dict(ln: SaleLine) -> dict:
         "category_name_ru": cat_ru,
         "product_name_uz": (getattr(p, "name_uz", None) or "") or "",
         "product_name_ru": (getattr(p, "name_ru", None) or "") or "",
-        "size_label_uz": sz_uz,
-        "size_label_ru": sz_ru,
-        "color_label_uz": col_uz,
-        "color_label_ru": col_ru,
         "qty": ln.qty,
         "list_unit_price": str(ln.list_unit_price),
         "net_unit_price": str(ln.net_unit_price),
@@ -164,8 +156,6 @@ class SaleDetailView(APIView):
         try:
             sale = Sale.objects.select_related("cashier").prefetch_related(
                 "lines__variant__product",
-                "lines__variant__size",
-                "lines__variant__color",
                 "payments",
             ).get(
                 pk=pk
@@ -482,7 +472,7 @@ class SaleSearchForReturnView(APIView):
         if sale_ids:
             line_qs = (
                 SaleLine.objects.filter(sale_id__in=sale_ids)
-                .select_related("variant__product__category", "variant__color", "variant__size")
+                .select_related("variant__product__category")
                 .order_by("sale_id", "id")
             )
             for ln in line_qs:
@@ -559,3 +549,94 @@ class SaleReturnLinesView(APIView):
                 "lines": rows,
             }
         )
+
+
+class SaleLinePriceEditView(APIView):
+    """Admin endpoint to edit sale line price after sale completion (for flexible pricing)."""
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+
+    def patch(self, request, sale_id, line_id):
+        """
+        Edit the selling price of a sale line after sale completion.
+        Only admin/owner can do this.
+        
+        Request body:
+        {
+            "list_unit_price": "150000.00"
+        }
+        """
+        try:
+            sale = Sale.objects.get(pk=sale_id)
+        except Sale.DoesNotExist:
+            return Response({"code": "SALE_NOT_FOUND", "detail": "Sale not found."}, status=404)
+        
+        try:
+            line = SaleLine.objects.select_related("variant__product").get(pk=line_id, sale=sale)
+        except SaleLine.DoesNotExist:
+            return Response({"code": "LINE_NOT_FOUND", "detail": "Sale line not found."}, status=404)
+        
+        # Validate request
+        new_price_str = request.data.get("list_unit_price")
+        if new_price_str is None:
+            return Response({"code": "PRICE_REQUIRED", "detail": "list_unit_price is required."}, status=400)
+        
+        try:
+            new_price = _q(Decimal(str(new_price_str)))
+        except Exception:
+            return Response({"code": "INVALID_PRICE", "detail": "Invalid price format."}, status=400)
+        
+        if new_price < 0:
+            return Response({"code": "NEGATIVE_PRICE", "detail": "Price cannot be negative."}, status=400)
+        
+        # Calculate new line totals
+        old_price = line.list_unit_price
+        price_diff = new_price - old_price
+        line_discount_per_unit = line.line_discount / Decimal(line.qty)
+        new_net_unit = _q(new_price - line_discount_per_unit)
+        
+        if new_net_unit < 0:
+            return Response({"code": "NEGATIVE_NET_PRICE", "detail": "Net price cannot be negative after discount."}, status=400)
+        
+        new_line_total = _q(new_net_unit * Decimal(line.qty))
+        new_subtotal = _q(sale.subtotal + (price_diff * Decimal(line.qty)))
+        new_grand_total = _q(new_subtotal - sale.discount_total)
+        
+        # Update line
+        line.list_unit_price = new_price
+        line.net_unit_price = new_net_unit
+        line.line_total = new_line_total
+        line.save(update_fields=["list_unit_price", "net_unit_price", "line_total", "updated_at"])
+        
+        # Update sale totals
+        sale.subtotal = new_subtotal
+        sale.grand_total = new_grand_total
+        sale.save(update_fields=["subtotal", "grand_total", "updated_at"])
+        
+        # Log audit
+        log_audit(
+            event_type="sale_line_price_edited",
+            actor=request.user.username if request.user else None,
+            entity_id=str(sale.id),
+            payload={
+                "line_id": str(line.id),
+                "old_price": str(old_price),
+                "new_price": str(new_price),
+                "product_name": line.variant.product.name_uz,
+                "barcode": line.variant.barcode,
+                "qty": line.qty,
+                "old_line_total": str(line.line_total - new_line_total + line.line_total),
+                "new_line_total": str(new_line_total),
+                "old_sale_grand_total": str(sale.grand_total - new_grand_total + sale.grand_total),
+                "new_sale_grand_total": str(new_grand_total),
+            },
+        )
+        
+        return Response({
+            "line_id": str(line.id),
+            "sale_id": str(sale.id),
+            "old_price": str(old_price),
+            "new_price": str(new_price),
+            "line_total": str(new_line_total),
+            "sale_grand_total": str(new_grand_total),
+            "message": "Sale line price updated successfully."
+        })

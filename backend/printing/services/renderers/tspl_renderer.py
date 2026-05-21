@@ -50,7 +50,8 @@ def _tspl_layout_centered(
 ) -> dict[str, Any]:
     """
     Vertically centered stack on the physical label; horizontally centered TEXT/BARCODE.
-    Priority: barcode is the largest element; size/color small on top; price under barcode.
+    Priority: barcode is the largest element; price under barcode.
+    Simplified for home appliances (no size/color).
     """
     w_dots = w_mm * 8
     h_dots = h_mm * 8
@@ -65,27 +66,20 @@ def _tspl_layout_centered(
         gap_small = 2
         gap_after_bc = 18
 
-    # Top line: size / color — small font "1", scale 1x1
-    sc_font = "1"
-    sc_char = 8
-    sc_line_h = 14
-
     # Price under barcode — readable but smaller than barcode height
     price_font = "2"
     price_char = 10
     price_line_h = 22
     if compact:
-        sc_line_h = 12
         price_line_h = 18
         price_char = 9
 
     inner_w = max(16, w_dots - 2 * margin)
     inner_h = max(32, h_dots - 2 * margin)
 
-    # Reserve top + bottom text bands; remaining height = barcode
-    reserved_top = sc_line_h + gap_small
+    # Reserve bottom text band for price; remaining height = barcode
     reserved_bottom = gap_after_bc + price_line_h + 4
-    bc_h = inner_h - reserved_top - reserved_bottom
+    bc_h = inner_h - reserved_bottom
     bc_h = max(32, min(bc_h, inner_h - 20))
     # TSPL BARCODE height is in dots; cap so tiny labels still print
     bc_h = min(bc_h, 220)
@@ -156,20 +150,12 @@ class TsplRenderer:
         copies = max(1, min(200, int(label_payload.get("copies") or 1)))
 
         barcode = (variant.barcode or "").strip() or "0"
-        size_color = _tspl_literal(
-            f"{variant.size.label_uz} / {variant.color.label_uz}".strip(),
-            max_len=36,
-        )
         price = _tspl_literal(f"{self._money(variant.list_price)} СОМ", max_len=22)
 
         w_mm, h_mm = _tspl_dimensions_mm(size_key)
         lay = _tspl_layout_centered(w_mm=w_mm, h_mm=h_mm, barcode=barcode)
         w_dots = lay["w_dots"]
 
-        x_sc = max(
-            8,
-            (w_dots - _text_width_dots(size_color, char_dots=lay["sc_char"])) // 2,
-        )
         x_price = max(
             8,
             (w_dots - _text_width_dots(price, char_dots=lay["price_char"])) // 2,
@@ -185,8 +171,6 @@ class TsplRenderer:
             blocks.extend(
                 [
                     "CLS",
-                    # Small: only size / color (centered)
-                    f'TEXT {x_sc},{lay["y_sc"]},"{lay["sc_font"]}",0,{lay["sc_xmul"]},{lay["sc_ymul"]},"{size_color}"',
                     # Largest element: CODE128, human-readable under bars
                     f'BARCODE {lay["x_bc"]},{lay["y_bc"]},"128",{lay["bc_h"]},1,0,{lay["nar"]},{lay["wide"]},"{barcode}"',
                     # Price under barcode (centered)

@@ -5,10 +5,6 @@
     "devPath": "http://localhost:5173",
     "distDir": "../frontend/dist"
   },
-  "package": {
-    "productName": "GEEKS POS",
-    "version": "0.1.0"
-  },
   "tauri": {
     "allowlist": {
       "http": {
@@ -30,11 +26,9 @@
       "active": true,
       "category": "Business",
       "copyright": "",
-      "deb": {
-        "depends": []
-      },
+      "identifier": "uz.geeks.pos",
       "externalBin": [
-        "../backend/dist/geeks_pos_backend"
+        "bin/geeks_pos_backend"
       ],
       "icon": [
         "icons/icon.ico",
@@ -42,19 +36,7 @@
         "icons/resized-logo (1).png",
         "icons/resized-logo (2).png"
       ],
-      "identifier": "uz.geeks.pos",
       "longDescription": "",
-      "macOS": {
-        "entitlements": null,
-        "exceptionDomain": "",
-        "frameworks": [],
-        "providerShortName": null,
-        "signingIdentity": null
-      },
-      "resources": [
-        "../scripts/windows/add-firewall-rule.ps1",
-        "../scripts/windows/add-firewall-rule-admin.bat"
-      ],
       "shortDescription": "",
       "targets": "all",
       "windows": {

@@ -35,3 +35,35 @@ class ShopExpenseListCreateView(generics.ListCreateAPIView):
         if to_date:
             qs = qs.filter(recorded_at__date__lte=to_date)
         return qs.order_by("-recorded_at")
+
+
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from core.permissions import IsAdminOrOwner
+
+
+class ShiftExpenseSummaryView(APIView):
+    """Get expense summary for a specific shift."""
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    
+    def get(self, request, shift_id):
+        from .services import get_shift_summary
+        
+        summary = get_shift_summary(shift_id)
+        if "error" in summary:
+            return Response({"code": "SHIFT_NOT_FOUND", "detail": summary["error"]}, status=404)
+        
+        return Response(summary)
+
+
+class AllShiftsSummaryView(APIView):
+    """Get summary of recent shifts with expenses."""
+    permission_classes = [IsAuthenticated, IsAdminOrOwner]
+    
+    def get(self, request):
+        from .services import get_all_shifts_summary
+        
+        limit = min(int(request.query_params.get("limit", 10)), 50)
+        summaries = get_all_shifts_summary(limit=limit)
+        
+        return Response({"results": summaries})

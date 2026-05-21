@@ -11,6 +11,7 @@ import {
   LineChart,
   Landmark,
   RotateCcw,
+  Truck,
   type LucideIcon,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -27,6 +28,7 @@ export type Section =
   | 'shift'
   | 'expenses'
   | 'returns'
+  | 'suppliers'
 
 const ITEMS: Array<{ id: Section; labelKey: string; icon: LucideIcon }> = [
   { id: 'dashboard', labelKey: 'admin.sidebar.dashboard', icon: LayoutDashboard },
@@ -36,6 +38,7 @@ const ITEMS: Array<{ id: Section; labelKey: string; icon: LucideIcon }> = [
   { id: 'stock', labelKey: 'admin.sidebar.stock', icon: PackageSearch },
   { id: 'inventory', labelKey: 'admin.sidebar.inventory', icon: Package },
   { id: 'catalog', labelKey: 'admin.sidebar.catalog', icon: Tags },
+  { id: 'suppliers', labelKey: 'admin.sidebar.suppliers', icon: Truck },
   { id: 'debts', labelKey: 'admin.sidebar.debts', icon: Wallet },
   { id: 'returns', labelKey: 'admin.sidebar.returns', icon: RotateCcw },
   { id: 'sales', labelKey: 'admin.sidebar.sales', icon: History },
@@ -86,11 +89,11 @@ export function AdminSidebar({
       </nav>
       <div className="mt-auto pt-3 border-t border-slate-800 space-y-2 shrink-0">
         <div className="text-xs uppercase tracking-wide text-slate-500 px-2">{t('admin.sidebar.language')}</div>
-        <div className="flex gap-2 px-0">
+        <div className="flex gap-1 px-0">
           <button
             type="button"
-            className={`touch-btn flex-1 text-sm px-3 py-2 rounded-xl border ${
-              i18n.language.startsWith('uz')
+            className={`touch-btn flex-1 text-xs px-2 py-2 rounded-xl border ${
+              i18n.language === 'uz'
                 ? 'bg-emerald-700 border-emerald-500 text-white'
                 : 'bg-slate-800 border-slate-600 text-slate-200'
             }`}
@@ -100,8 +103,19 @@ export function AdminSidebar({
           </button>
           <button
             type="button"
-            className={`touch-btn flex-1 text-sm px-3 py-2 rounded-xl border ${
-              i18n.language.startsWith('ru')
+            className={`touch-btn flex-1 text-xs px-2 py-2 rounded-xl border ${
+              i18n.language === 'uz-cyrl'
+                ? 'bg-emerald-700 border-emerald-500 text-white'
+                : 'bg-slate-800 border-slate-600 text-slate-200'
+            }`}
+            onClick={() => i18n.changeLanguage('uz-cyrl')}
+          >
+            Ўз
+          </button>
+          <button
+            type="button"
+            className={`touch-btn flex-1 text-xs px-2 py-2 rounded-xl border ${
+              i18n.language === 'ru'
                 ? 'bg-emerald-700 border-emerald-500 text-white'
                 : 'bg-slate-800 border-slate-600 text-slate-200'
             }`}

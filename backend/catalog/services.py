@@ -15,18 +15,24 @@ def bulk_create_variant_grid(
     user,
 ) -> list[ProductVariant]:
     """
-    matrix items: size_id, color_id, purchase_price, list_price, initial_qty (int)
+    Simplified for home appliances - no size/color matrix.
+    matrix items: purchase_price, list_price (optional), initial_qty (int), barcode (optional)
     """
     created: list[ProductVariant] = []
     for cell in matrix:
         qty = int(cell.get("initial_qty") or 0)
+        barcode = cell.get("barcode") or None
+
+        # list_price may be optional for home-appliance flow
+        raw_list = cell.get("list_price")
+        list_price = Decimal(str(raw_list)) if raw_list is not None and str(raw_list) != "" else None
+
         v = ProductVariant(
             product=product,
-            size_id=cell["size_id"],
-            color_id=cell["color_id"],
             purchase_price=Decimal(str(cell["purchase_price"])),
-            list_price=Decimal(str(cell["list_price"])),
+            list_price=list_price,
             stock_qty=0,
+            barcode=barcode,
         )
         v.save()
         if qty > 0:

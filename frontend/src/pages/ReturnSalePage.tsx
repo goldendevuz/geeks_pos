@@ -565,11 +565,6 @@ export function ReturnSalePage() {
                             {pickLocalized(ln.category_name_uz, ln.category_name_ru, langRu)}
                           </div>
                           <div className="text-xs text-slate-400 mt-0.5 font-mono">{ln.barcode}</div>
-                          <div className="text-xs text-slate-400">
-                            {pickLocalized(ln.size_label_uz, ln.size_label_ru, langRu)}
-                            {' / '}
-                            {pickLocalized(ln.color_label_uz, ln.color_label_ru, langRu)}
-                          </div>
                           <p className="text-xs text-slate-500 mt-1">
                             {t('admin.return.canReturn', { remaining: max, sold: ln.sold_qty })}
                           </p>

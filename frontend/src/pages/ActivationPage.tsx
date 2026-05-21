@@ -26,7 +26,7 @@ export function ActivationPage({
     setError(null)
     setBusy(true)
     try {
-      let hw = await getTauriMachineId()
+      const hw = await getTauriMachineId()
       if (!hw) {
         setError(t('license.hardwareUnavailable'))
         setBusy(false)

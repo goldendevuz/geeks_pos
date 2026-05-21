@@ -24,10 +24,13 @@ void i18n.use(initReactI18next).init({
 
 export async function loadLocale(lang: string) {
   if (i18n.hasResourceBundle(lang, 'translation')) return
-  const mod = lang.startsWith('ru')
+  const mod = lang === 'ru'
     ? await import('./locales/ru.json')
+    : lang === 'uz-cyrl'
+    ? await import('./locales/uz-cyrl.json')
     : await import('./locales/uz.json')
-  i18n.addResourceBundle(lang.startsWith('ru') ? 'ru' : 'uz', 'translation', mod.default, true, true)
+  const targetLang = lang === 'ru' ? 'ru' : lang === 'uz-cyrl' ? 'uz-cyrl' : 'uz'
+  i18n.addResourceBundle(targetLang, 'translation', mod.default, true, true)
 }
 
 i18n.on('languageChanged', (lng) => {

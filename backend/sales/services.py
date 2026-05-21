@@ -121,13 +121,22 @@ def _complete_sale_inner(
             raise ValueError("line_discount cannot be negative")
 
         v = (
-            ProductVariant.objects.select_related("product", "size", "color")
+            ProductVariant.objects.select_related("product")
             .filter(pk=vid, is_active=True, deleted_at__isnull=True)
             .first()
         )
         if not v:
             raise ValueError(f"Variant not found or inactive: {vid}")
-        list_price = _q(v.list_price)
+        # Allow sale-time price override: frontend may send 'unit_price'.
+        raw_unit_price = raw.get("unit_price")
+        if raw_unit_price is not None and str(raw_unit_price).strip() != "":
+            list_price = _q(Decimal(str(raw_unit_price)))
+        elif v.list_price is not None:
+            list_price = _q(v.list_price)
+        else:
+            # Variant has no list price and none provided by client: reject.
+            raise ValueError("Unit price required for variant without list_price")
+
         net_unit = _q(list_price - (line_discount / Decimal(qty)))
         if net_unit < 0:
             raise ValueError("Discount exceeds line subtotal")

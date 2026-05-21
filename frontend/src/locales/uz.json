@@ -1,9 +1,10 @@
-﻿{
+{
   "app.title": "Geeks POS",
   "common.valueBefore": "Oldingi qiymat",
   "common.valueEditing": "Kiritilmoqda",
   "common.numpadWillSaveAs": "Chegara: saqlashda {{value}}",
   "lang.uz": "O'zbek",
+  "lang.uz-cyrl": "O'zbek (Kirill)",
   "lang.ru": "Русский",
   "auth.username": "Foydalanuvchi",
   "auth.password": "Parol",
@@ -68,15 +69,12 @@
   "pos.numpadDiscountTitle": "Chegirma summasi",
   "pos.numpadApply": "Tayyor",
   "pos.openNumpad": "Raqamli klaviatura",
-  "pos.searchLabel": "Tovar qidiruv (nomi, o'lcham, rang, shtrix-kod)",
+  "pos.searchLabel": "Tovar qidiruv (nomi, shtrix-kod)",
   "pos.searchPlaceholder": "Kamida 2 belgi yozing…",
   "pos.searchEmpty": "Hech narsa topilmadi",
   "pos.lowStockWarning": "Diqqat: quyidagi qatorlarda omborda kam qoldi (< {{n}} dona)",
   "pos.lowStockModelWarning": "Diqqat: model bo'yicha qoldiq {{n}} donadan kam",
-  "pos.stockMatrix": "O'lcham / zaxira",
-  "pos.stockMatrixTitle": "Tanlangan model va rang bo'yicha zaxira",
   "pos.matrixClose": "Yopish",
-  "pos.matrixSize": "O'lcham",
   "pos.matrixStock": "Zaxira",
   "pos.afterSaleStock": "Sotuvdan keyin omborda: {{count}} dona",
   "pos.afterSaleModelStock": "Sotuvdan keyin model qoldig'i: {{count}} dona",
@@ -266,15 +264,12 @@
   "admin.catalog.title": "Katalog",
   "admin.catalog.hint": "Qidiruv yoki filtrlash orqali variantlarni boshqaring.",
   "admin.catalog.actionsHelp": "Har bir tugma: tahrirlash, navbatga qo'shish, stiker chop etish, aktiv/noaktiv, o'chirish amallari uchun.",
-  "admin.catalog.searchPlaceholder": "Barcode / brend / model / o'lcham / rang",
+  "admin.catalog.searchPlaceholder": "Barcode / brend / model",
   "admin.catalog.showDeleted": "O'chirilgan/noaktivlarni ko'rsatish",
   "admin.catalog.product": "Tovar",
-  "admin.catalog.size": "O'lcham",
-  "admin.catalog.color": "Rang",
   "admin.catalog.purchase": "Kirimi",
   "admin.catalog.sale": "Sotuv",
   "admin.catalog.addVariant": "Variant qo'shish",
-  "admin.catalog.sizeColor": "O'lcham/Rang",
   "admin.catalog.barcode": "Barcode",
   "admin.catalog.stock": "Qoldiq",
   "admin.catalog.price": "Narx",
@@ -342,14 +337,6 @@
   "admin.catalog.confirmDeleteModel": "Tanlangan model o'chirilsinmi?",
   "admin.catalog.brandDeleted": "Brend o'chirildi",
   "admin.catalog.modelDeleted": "Model o'chirildi",
-  "admin.catalog.seedStandard": "31-45 razmer va standart ranglarni qo'shish",
-  "admin.catalog.sizeLinePresetTitle": "Matritsa uchun razmer liniyasi",
-  "admin.catalog.sizeLinePreset.children": "Bolalar (31-36)",
-  "admin.catalog.sizeLinePreset.teen": "O'smirlar (36-41)",
-  "admin.catalog.sizeLinePreset.adult": "Kattalar (40-45)",
-  "admin.catalog.sizeLinePresetRange.children": "31-36",
-  "admin.catalog.sizeLinePresetRange.teen": "36-41",
-  "admin.catalog.sizeLinePresetRange.adult": "40-45",
   "admin.catalog.modelStock": "Model: {{count}} dona",
   "admin.catalog.lowStockModelsWarning": "Model bo'yicha kam qoldiq: {{count}} ta (qoldiq < {{n}} dona)",
   "admin.catalog.barcodeAuto": "Barcode avtomatik yaratiladi: PRD-{ID}",
@@ -630,29 +617,62 @@
   "err.VOID_NOT_ALLOWED": "Bekor qilib bo‘lmaydi: tovar to‘liq qaytarilgan.",
   "err.LICENSE_ACTIVATE_FAILED": "Litsenziyani faollashtirib bo'lmadi.",
   "err.BACKUP_FAILED": "Backup yaratilmadi.",
-  "err.BACKEND_INIT_REQUIRED": "Dastur ishga tushmoqda: baza tayyorlanmoqda. 10-20 soniyadan keyin qayta urinib ko'ring."
-  ,"err.FETCH_DASHBOARD_FAILED": "Dashboard ma'lumotlari yuklanmadi."
-  ,"err.FETCH_INTEGRATIONS_FAILED": "Integratsiya sozlamalari yuklanmadi."
-  ,"err.UPDATE_INTEGRATIONS_FAILED": "Integratsiya sozlamalari saqlanmadi."
-  ,"err.TELEGRAM_SEND_FAILED": "Telegramga yuborib bo'lmadi."
-  ,"err.ZREPORT_SEND_FAILED": "Z-Report yuborilmadi."
-  ,"err.WHATSAPP_SEND_FAILED": "WhatsApp eslatma yuborilmadi."
-  ,"err.CUSTOMER_NOT_FOUND": "Mijoz topilmadi."
-  ,"err.UNKNOWN": "Noma'lum xatolik."
-  ,"err.TEST_RECEIPT_FAILED": "Test chek yuborilmadi."
-  ,"err.TEST_LABEL_FAILED": "Test stiker yuborilmadi."
-  ,"err.INVENTORY_RECEIVE_FAILED": "Omborga kirim saqlanmadi."
-  ,"err.INVENTORY_ADJUST_FAILED": "Qoldiq sozlash saqlanmadi."
-  ,"err.POS_PRICE_UPDATE_FAILED": "POS narxini yangilab bo'lmadi."
-  ,"err.LABEL_PRINT_FAILED": "Stiker chop etilmadi."
-  ,"err.LABEL_QUEUE_FAILED": "Stikerlar navbatini chop etib bo'lmadi."
-  ,"err.FETCH_HARDWARE_CONFIG_FAILED": "Qurilma sozlamalari yuklanmadi."
-  ,"err.FETCH_STOCK_EVENTS_FAILED": "Stock sinxronizatsiyasi yuklanmadi."
-  ,"err.RETURN_FAILED": "Qaytarish bajarilmadi."
-  ,"err.RETURN_REFUND_MISMATCH": "Qaytarish summasi mahsulot summasiga mos kelishi kerak."
-  ,"err.RETURN_REFUND_EXCEEDS": "Qaytarish miqdori qolgan to‘lov limitidan oshdi."
-  ,"err.PRINT_FAILED": "Chop etishda xatolik."
-  ,"err.DELETE_VARIANT_FAILED": "Variantni o'chirib bo'lmadi."
-  ,"err.DELETE_PRODUCT_FAILED": "Modelni o'chirib bo'lmadi."
-  ,"err.DELETE_CATEGORY_FAILED": "Brendni o'chirib bo'lmadi."
+  "err.BACKEND_INIT_REQUIRED": "Dastur ishga tushmoqda: baza tayyorlanmoqda. 10-20 soniyadan keyin qayta urinib ko'ring.",
+  "err.FETCH_DASHBOARD_FAILED": "Dashboard ma'lumotlari yuklanmadi.",
+  "err.FETCH_INTEGRATIONS_FAILED": "Integratsiya sozlamalari yuklanmadi.",
+  "err.UPDATE_INTEGRATIONS_FAILED": "Integratsiya sozlamalari saqlanmadi.",
+  "err.TELEGRAM_SEND_FAILED": "Telegramga yuborib bo'lmadi.",
+  "err.ZREPORT_SEND_FAILED": "Z-Report yuborilmadi.",
+  "err.WHATSAPP_SEND_FAILED": "WhatsApp eslatma yuborilmadi.",
+  "err.CUSTOMER_NOT_FOUND": "Mijoz topilmadi.",
+  "err.UNKNOWN": "Noma'lum xatolik.",
+  "err.TEST_RECEIPT_FAILED": "Test chek yuborilmadi.",
+  "err.TEST_LABEL_FAILED": "Test stiker yuborilmadi.",
+  "err.INVENTORY_RECEIVE_FAILED": "Omborga kirim saqlanmadi.",
+  "err.INVENTORY_ADJUST_FAILED": "Qoldiq sozlash saqlanmadi.",
+  "err.POS_PRICE_UPDATE_FAILED": "POS narxini yangilab bo'lmadi.",
+  "err.LABEL_PRINT_FAILED": "Stiker chop etilmadi.",
+  "err.LABEL_QUEUE_FAILED": "Stikerlar navbatini chop etib bo'lmadi.",
+  "err.FETCH_HARDWARE_CONFIG_FAILED": "Qurilma sozlamalari yuklanmadi.",
+  "err.FETCH_STOCK_EVENTS_FAILED": "Stock sinxronizatsiyasi yuklanmadi.",
+  "err.RETURN_FAILED": "Qaytarish bajarilmadi.",
+  "err.RETURN_REFUND_MISMATCH": "Qaytarish summasi mahsulot summasiga mos kelishi kerak.",
+  "err.RETURN_REFUND_EXCEEDS": "Qaytarish miqdori qolgan to‘lov limitidan oshdi.",
+  "err.PRINT_FAILED": "Chop etishda xatolik.",
+  "err.DELETE_VARIANT_FAILED": "Variantni o'chirib bo'lmadi.",
+  "err.DELETE_PRODUCT_FAILED": "Modelni o'chirib bo'lmadi.",
+  "err.DELETE_CATEGORY_FAILED": "Brendni o'chirib bo'lmadi.",
+  "admin.catalog.wizard.addApplianceVariant": "Tovar qo'shish",
+  "admin.catalog.wizard.closeApplianceForm": "Yopish",
+  "admin.sidebar.suppliers": "Yetkazib beruvchilar",
+  "admin.suppliers.hint": "Yetkazib beruvchilarni boshqaring va tranzaksiyalarni kuzating",
+  "admin.suppliers.comingSoon": "Yetkazib beruvchilarni boshqarish tez orada...",
+  "admin.suppliers.backendReady": "Backend API tayyor. Frontend UI keyingi yangilanishda qo'shiladi.",
+  "admin.catalog.wizard.applianceFormTitle": "Yangi model nomi",
+  "admin.catalog.listPriceOptional": "Sotuv narxi (ixtiyoriy)",
+  "admin.catalog.barcodeOptional": "Barcode (ixtiyoriy)",
+  "admin.catalog.initialQty": "Boshlang'ich soni",
+  "admin.catalog.wizard.createApplianceVariant": "Variant yaratish",
+  "admin.suppliers.add": "Yetkazib beruvchi qo'shish",
+  "admin.suppliers.edit": "Yetkazib beruvchini tahrirlash",
+  "admin.suppliers.name": "Nomi",
+  "admin.suppliers.contactPerson": "Aloqa shaxsi",
+  "admin.suppliers.phone": "Telefon",
+  "admin.suppliers.email": "Email",
+  "admin.suppliers.address": "Manzil",
+  "admin.suppliers.empty": "Hali yetkazib beruvchilar yo'q",
+  "admin.suppliers.emptyHint": "Boshlash uchun birinchi yetkazib beruvchini qo'shing",
+  "admin.suppliers.confirmDelete": "Bu yetkazib beruvchini o'chirishni tasdiqlaysizmi?",
+  "admin.catalog.purchasePricePlaceholder": "Masalan: 100000",
+  "admin.catalog.salePricePlaceholder": "Masalan: 150000",
+  "admin.catalog.listPricePlaceholder": "Sotuv narxi (ixtiyoriy)",
+  "admin.catalog.initialQtyPlaceholder": "Masalan: 10",
+  "admin.catalog.barcodePlaceholder": "Masalan: 1234567890123",
+  "admin.catalog.newBrandPlaceholder": "Yangi brend nomini kiriting",
+  "admin.catalog.newModelPlaceholder": "Yangi model nomini kiriting",
+  "admin.suppliers.namePlaceholder": "Masalan: Samsung Electronics",
+  "admin.suppliers.contactPersonPlaceholder": "Masalan: Alisher Karimov",
+  "admin.suppliers.phonePlaceholder": "Masalan: +998901234567",
+  "admin.suppliers.emailPlaceholder": "Masalan: info@supplier.com",
+  "admin.suppliers.addressPlaceholder": "Masalan: Toshkent sh., Chilonzor t."
 }

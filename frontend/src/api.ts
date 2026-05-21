@@ -194,17 +194,16 @@ export type PosVariant = {
   product: string
   product_name_uz: string
   product_name_ru?: string
-  size: string
-  size_label_uz: string
-  size_label_ru?: string
-  color: string
-  color_label_uz: string
-  color_label_ru?: string
+  product_custom_name_uz?: string
+  product_custom_name_ru?: string
+  category_name_uz?: string
+  category_name_ru?: string
   barcode: string | null
-  list_price: string
+  list_price: string | null
   stock_qty: number
   is_active: boolean
   deleted_at: string | null
+  hide_selling_price?: boolean
 }
 
 export async function fetchCsrf(): Promise<string> {
@@ -298,9 +297,8 @@ export async function fetchPosVariantSearch(q: string): Promise<PosVariant[]> {
   return Array.isArray(j.results) ? j.results : []
 }
 
-export async function fetchPosVariantsByProduct(productId: string, colorId?: string): Promise<PosVariant[]> {
+export async function fetchPosVariantsByProduct(productId: string): Promise<PosVariant[]> {
   const qs = new URLSearchParams({ product_id: productId })
-  if (colorId) qs.set('color_id', colorId)
   const r = await fetch(`${API}/api/catalog/variants/pos-by-product/?${qs}`, { credentials: 'include' })
   if (!r.ok) throw await parseErrorResponse(r, 'API_ERROR')
   const j = (await r.json()) as { results?: PosVariant[] }
@@ -469,18 +467,16 @@ export type Variant = {
   product: string
   product_name_uz: string
   product_name_ru?: string
+  product_custom_name_uz?: string
+  product_custom_name_ru?: string
   category_name_uz?: string
   category_name_ru?: string
-  size: string
-  size_label_uz: string
-  size_label_ru?: string
-  color: string
-  color_label_uz: string
-  color_label_ru?: string
   barcode: string | null
   purchase_price: string
-  list_price: string
+  list_price: string | null
   stock_qty: number
+  show_price_on_label: boolean
+  hide_selling_price: boolean
   is_active: boolean
   deleted_at: string | null
 }
@@ -491,19 +487,16 @@ export type CashierStockVariant = {
   product: string
   product_name_uz: string
   product_name_ru: string
+  product_custom_name_uz?: string
+  product_custom_name_ru?: string
   category_name_uz?: string
   category_name_ru?: string
-  size: string
-  size_label_uz: string
-  size_label_ru: string
-  color: string
-  color_label_uz: string
-  color_label_ru: string
   barcode: string | null
-  list_price: string
+  list_price: string | null
   purchase_price?: string
   stock_qty: number
   is_active: boolean
+  hide_selling_price: boolean
 }
 
 export type CashierXReport = {
@@ -523,8 +516,6 @@ export type CashierXReport = {
   range: { from: string; to: string }
 }
 
-export type Size = { id: string; value: string; label_uz: string; label_ru?: string }
-export type Color = { id: string; value: string; label_uz: string; label_ru?: string }
 export type Paginated<T> = {
   count: number
   next: string | null
@@ -674,106 +665,11 @@ export async function fetchCashierStockVariants(params?: {
   return toPaginated<CashierStockVariant>(await r.json())
 }
 
-export async function fetchSizes(): Promise<Size[]> {
-  const r = await fetch(`${API}/api/catalog/sizes/`, { credentials: 'include' })
-  if (!r.ok) throw new Error('FETCH_SIZES_FAILED')
-  return r.json()
-}
-
-export async function createSize(body: {
-  value: string
-  label_uz: string
-  label_ru: string
-  sort_order?: number
-}) {
-  const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
-  const r = await fetch(`${API}/api/catalog/sizes/`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
-    body: JSON.stringify(body),
-  })
-  const j = await r.json().catch(() => ({}))
-  if (!r.ok) throw new AppError(j.code || 'CREATE_SIZE_FAILED', j.detail)
-  return j as Size
-}
-
-export async function updateSize(sizeId: string, body: { value?: string; label_uz?: string; label_ru?: string; sort_order?: number }) {
-  const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
-  const r = await fetch(`${API}/api/catalog/sizes/${sizeId}/`, {
-    method: 'PATCH',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
-    body: JSON.stringify(body),
-  })
-  const j = await r.json().catch(() => ({}))
-  if (!r.ok) throw new AppError(j.code || 'UPDATE_SIZE_FAILED', j.detail)
-  return j as Size
-}
-
-export async function deleteSize(sizeId: string) {
-  const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
-  const r = await fetch(`${API}/api/catalog/sizes/${sizeId}/`, {
-    method: 'DELETE',
-    credentials: 'include',
-    headers: { 'X-CSRFToken': csrf },
-  })
-  if (!r.ok) throw new AppError('DELETE_SIZE_FAILED')
-}
-
-export async function fetchColors(): Promise<Color[]> {
-  const r = await fetch(`${API}/api/catalog/colors/`, { credentials: 'include' })
-  if (!r.ok) throw new Error('FETCH_COLORS_FAILED')
-  return r.json()
-}
-
-export async function createColor(body: {
-  value: string
-  label_uz: string
-  label_ru: string
-  sort_order?: number
-}) {
-  const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
-  const r = await fetch(`${API}/api/catalog/colors/`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
-    body: JSON.stringify(body),
-  })
-  const j = await r.json().catch(() => ({}))
-  if (!r.ok) throw new AppError(j.code || 'CREATE_COLOR_FAILED', j.detail)
-  return j as Color
-}
-
-export async function updateColor(colorId: string, body: { value?: string; label_uz?: string; label_ru?: string; sort_order?: number }) {
-  const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
-  const r = await fetch(`${API}/api/catalog/colors/${colorId}/`, {
-    method: 'PATCH',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
-    body: JSON.stringify(body),
-  })
-  const j = await r.json().catch(() => ({}))
-  if (!r.ok) throw new AppError(j.code || 'UPDATE_COLOR_FAILED', j.detail)
-  return j as Color
-}
-
-export async function deleteColor(colorId: string) {
-  const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
-  const r = await fetch(`${API}/api/catalog/colors/${colorId}/`, {
-    method: 'DELETE',
-    credentials: 'include',
-    headers: { 'X-CSRFToken': csrf },
-  })
-  if (!r.ok) throw new AppError('DELETE_COLOR_FAILED')
-}
-
 export type BulkGridCell = {
-  size_id: string
-  color_id: string
   purchase_price: string
-  list_price: string
+  list_price?: string
   initial_qty?: number
+  barcode?: string
 }
 
 export async function createVariantBulkGrid(body: { product_id: string; matrix: BulkGridCell[] }) {
@@ -787,27 +683,6 @@ export async function createVariantBulkGrid(body: { product_id: string; matrix: 
   const j = await r.json().catch(() => ({}))
   if (!r.ok) throw new AppError(j.code || 'BULK_GRID_FAILED', j.detail)
   return j as Variant[]
-}
-
-export async function createVariant(body: {
-  product: string
-  size: string
-  color: string
-  purchase_price: string
-  list_price: string
-  stock_qty: number
-  is_active?: boolean
-}) {
-  const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
-  const r = await fetch(`${API}/api/catalog/variants/`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
-    body: JSON.stringify(body),
-  })
-  const j = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(j.detail || 'CREATE_VARIANT_FAILED')
-  return j as Variant
 }
 
 export async function updateVariant(
@@ -1055,10 +930,6 @@ export type SaleReturnPreviewLine = {
   category_name_ru: string
   product_name_uz: string
   product_name_ru: string
-  size_label_uz: string
-  size_label_ru: string
-  color_label_uz: string
-  color_label_ru: string
   qty: number
   list_unit_price: string
   net_unit_price: string
@@ -1094,10 +965,6 @@ export type SaleReturnEligibleLineRow = {
   product_name_ru?: string
   category_name_uz?: string
   category_name_ru?: string
-  size_label_uz: string
-  size_label_ru?: string
-  color_label_uz: string
-  color_label_ru?: string
   sold_qty: number
   returned_qty: number
   remaining_qty: number

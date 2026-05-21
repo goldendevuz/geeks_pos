@@ -7,8 +7,7 @@ def test_me_returns_owner_for_superuser(client):
     u = User.objects.create_superuser(
         username="root_role_test",
         email="root@test.local",
-        password="pass12345",
-    )
+        password="pass12345")
     client.force_login(u)
     resp = client.get("/api/auth/me/")
     assert resp.status_code == 200

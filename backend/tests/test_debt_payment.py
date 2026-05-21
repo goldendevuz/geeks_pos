@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 from django.contrib.auth.models import User
 
-from catalog.models import Category, Color, Product, ProductVariant, Size
+from catalog.models import Category, Product, ProductVariant
 from debt.models import Customer, Debt
 from core.exceptions import DebtPolicyError
 from debt.services import record_debt_payment
@@ -28,17 +28,12 @@ def customer(db):
 @pytest.mark.django_db
 def test_debt_created_on_debt_payment(cashier, customer):
     cat = Category.objects.create(name_uz="A", name_ru="A")
-    sz = Size.objects.create(value="41", label_uz="41", label_ru="41")
-    col = Color.objects.create(value="W", label_uz="Oq", label_ru="Белый")
     prod = Product.objects.create(category=cat, name_uz="P", name_ru="P")
     v = ProductVariant(
         product=prod,
-        size=sz,
-        color=col,
         purchase_price=Decimal("10"),
         list_price=Decimal("100"),
-        stock_qty=0,
-    )
+        stock_qty=0)
     v.save()
     from inventory.models import InventoryMovement
     from inventory.services import apply_movement
@@ -48,8 +43,7 @@ def test_debt_created_on_debt_payment(cashier, customer):
         qty_delta=10,
         movement_type=InventoryMovement.Type.IN,
         user=cashier,
-        note="",
-    )
+        note="")
     key = str(uuid.uuid4())
     sale = complete_sale(
         idempotency_key=key,
@@ -62,8 +56,7 @@ def test_debt_created_on_debt_payment(cashier, customer):
         customer={
             "name": customer.name,
             "phone_normalized": customer.phone_normalized,
-        },
-    )
+        })
     d = Debt.objects.get(originating_sale=sale)
     assert d.remaining_amount == Decimal("50.00")
     record_debt_payment(customer=customer, amount=Decimal("20.00"), user=cashier)
@@ -84,8 +77,7 @@ def test_debt_fifo_across_multiple_sales(cashier, customer):
         color=col,
         purchase_price=Decimal("10"),
         list_price=Decimal("100"),
-        stock_qty=0,
-    )
+        stock_qty=0)
     v.save()
     from inventory.models import InventoryMovement
     from inventory.services import apply_movement
@@ -95,23 +87,20 @@ def test_debt_fifo_across_multiple_sales(cashier, customer):
         qty_delta=20,
         movement_type=InventoryMovement.Type.IN,
         user=cashier,
-        note="",
-    )
+        note="")
 
     s1 = complete_sale(
         idempotency_key=str(uuid.uuid4()),
         cashier=cashier,
         lines=[{"variant_id": str(v.id), "qty": 1, "line_discount": "0"}],
         payments=[{"method": "DEBT", "amount": "100.00"}],
-        customer={"name": customer.name, "phone_normalized": customer.phone_normalized},
-    )
+        customer={"name": customer.name, "phone_normalized": customer.phone_normalized})
     s2 = complete_sale(
         idempotency_key=str(uuid.uuid4()),
         cashier=cashier,
         lines=[{"variant_id": str(v.id), "qty": 1, "line_discount": "0"}],
         payments=[{"method": "DEBT", "amount": "100.00"}],
-        customer={"name": customer.name, "phone_normalized": customer.phone_normalized},
-    )
+        customer={"name": customer.name, "phone_normalized": customer.phone_normalized})
 
     d1 = Debt.objects.get(originating_sale=s1)
     d2 = Debt.objects.get(originating_sale=s2)
@@ -140,8 +129,7 @@ def test_debt_payment_overpay_rejected(cashier, customer):
         color=col,
         purchase_price=Decimal("10"),
         list_price=Decimal("100"),
-        stock_qty=0,
-    )
+        stock_qty=0)
     v.save()
     from inventory.models import InventoryMovement
     from inventory.services import apply_movement
@@ -151,16 +139,14 @@ def test_debt_payment_overpay_rejected(cashier, customer):
         qty_delta=10,
         movement_type=InventoryMovement.Type.IN,
         user=cashier,
-        note="",
-    )
+        note="")
 
     s = complete_sale(
         idempotency_key=str(uuid.uuid4()),
         cashier=cashier,
         lines=[{"variant_id": str(v.id), "qty": 1, "line_discount": "0"}],
         payments=[{"method": "DEBT", "amount": "100.00"}],
-        customer={"name": customer.name, "phone_normalized": customer.phone_normalized},
-    )
+        customer={"name": customer.name, "phone_normalized": customer.phone_normalized})
     d = Debt.objects.get(originating_sale=s)
     with pytest.raises(DebtPolicyError):
         record_debt_payment(customer=customer, amount=Decimal("1000.00"), user=cashier)
