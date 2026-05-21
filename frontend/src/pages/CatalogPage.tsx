@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { List, type RowComponentProps } from 'react-window'
-import type { BulkGridCell, Category, LabelStickerSize, Product, Variant } from '../api'
+import type { BulkGridCell, Category, LabelStickerSize, Product, Variant, StoreSettings } from '../api'
 import { useTranslation } from 'react-i18next'
 import { formatMoney } from '../utils/money'
 import { NumericNumpadField } from '../components/NumericNumpadField'
@@ -9,7 +9,6 @@ import { Pencil, Printer, Power, Trash2, PackagePlus, ScanBarcode } from 'lucide
 
 const LABEL_SIZE_STORAGE_KEY = 'geeks_pos_catalog_label_size'
 const DEFAULT_LABEL_SIZE: LabelStickerSize = '40x30'
-const LOW_STOCK_THRESHOLD = 3
 
 function normalizeSavedLabelSize(raw: string | null): LabelStickerSize {
   const v = (raw || '').trim()
@@ -35,6 +34,7 @@ export function CatalogPage({
   onCreateVariantBulk,
   onCreateCategory,
   onCreateProduct,
+  onUpdateProduct,
   onDeleteCategory,
   onDeleteProduct,
   onAdjustStockQuick,
@@ -49,6 +49,7 @@ export function CatalogPage({
   categoryId,
   productId,
   onFacetsChange,
+  settings,
 }: {
   categories: Category[]
   products: Product[]
@@ -60,6 +61,7 @@ export function CatalogPage({
   onCreateVariantBulk: (payload: { product_id: string; matrix: BulkGridCell[] }) => Promise<Variant[]>
   onCreateCategory: (payload: { name_uz: string; name_ru: string }) => Promise<void>
   onCreateProduct: (payload: { category: string; name_uz: string; name_ru: string }) => Promise<void>
+  onUpdateProduct: (productId: string, payload: { custom_name_uz?: string; custom_name_ru?: string; custom_name_uz_cyrillic?: string }) => Promise<void>
   onDeleteCategory: (categoryId: string) => Promise<void>
   onDeleteProduct: (productId: string) => Promise<void>
   onAdjustStockQuick: (variantId: string, qtyDelta: number, note: string) => Promise<void>
@@ -84,8 +86,10 @@ export function CatalogPage({
     category_id?: string
     product_id?: string
   }) => void
+  settings: StoreSettings | null
 }) {
   const { t, i18n } = useTranslation()
+  const lowStockThreshold = settings?.low_stock_threshold ?? 3
   const [form, setForm] = useState<WizardVariantForm>({
     product: '',
     purchase_price: '0',
@@ -132,6 +136,9 @@ export function CatalogPage({
   const [apList, setApList] = useState('')
   const [apQty, setApQty] = useState('0')
   const [apBarcode, setApBarcode] = useState('')
+  const [apCustomName, setApCustomName] = useState('')
+  const [lowStockModalOpen, setLowStockModalOpen] = useState(false)
+  const [lowStockFilterBrand, setLowStockFilterBrand] = useState('')
 
   const productStockTotals = useMemo(() => {
     const totals: Record<string, number> = {}
@@ -146,11 +153,11 @@ export function CatalogPage({
     const uniqueProducts = new Set<string>(variants.map((v) => v.product))
     let count = 0
     uniqueProducts.forEach((productId) => {
-      if ((productStockTotals[productId] || 0) < LOW_STOCK_THRESHOLD) count += 1
+      if ((productStockTotals[productId] || 0) < lowStockThreshold) count += 1
     })
     return count
-  }, [productStockTotals, variants])
-
+    
+  }, [productStockTotals, variants, lowStockThreshold])
   /** Deactivated rows vs zero-stock (active) rows — distinct backgrounds. */
   function catalogVariantRowClass(v: Variant) {
     if (!v.is_active) {
@@ -204,7 +211,17 @@ export function CatalogPage({
 
     setBusy(true)
     try {
+      // Create the variant
       const created = await onCreateVariantBulk({ product_id: productId, matrix })
+      
+      // Update product with custom name if provided
+      if (apCustomName.trim()) {
+        await onUpdateProduct(productId, {
+          custom_name_uz: apCustomName.trim(),
+          custom_name_ru: apCustomName.trim(),
+        })
+      }
+      
       setToast(t('admin.catalog.wizard.bulkSuccess'))
       if (addToPrintQueue && created.length > 0) {
         setBulkStickerPrompt({ variantIds: created.map((row) => row.id), copiesStr: '1' })
@@ -220,6 +237,7 @@ export function CatalogPage({
       setApList('')
       setApQty('0')
       setApBarcode('')
+      setApCustomName('')
       setApplianceOpen(false)
     } catch {
       setToast(t('admin.catalog.wizard.bulkError'))
@@ -404,11 +422,15 @@ export function CatalogPage({
             <option value="">
               {!categoryId ? t('admin.catalog.filterModelPickBrandFirst') : t('admin.catalog.filterModelAll')}
             </option>
-            {products.filter((p) => !categoryId || p.category === categoryId).map((p) => (
-              <option key={p.id} value={p.id}>
-                {i18n.language.startsWith('ru') ? p.name_ru || p.name_uz : p.name_uz}
-              </option>
-            ))}
+            {products.filter((p) => !categoryId || p.category === categoryId).map((p) => {
+              const brandName = categories.find(c => c.id === p.category)?.[i18n.language.startsWith('ru') ? 'name_ru' : 'name_uz'] || ''
+              const modelName = i18n.language.startsWith('ru') ? p.name_ru || p.name_uz : p.name_uz
+              return (
+                <option key={p.id} value={p.id}>
+                  {brandName && `${brandName} - `}{modelName}
+                </option>
+              )
+            })}
           </select>
         </label>
         <label className="text-xs text-slate-400 flex flex-col gap-1">
@@ -435,6 +457,14 @@ export function CatalogPage({
         >
           {printAllBusy ? t('admin.common.loading') : t('admin.catalog.printAllModelVariants')}
         </button>
+        <button
+          type="button"
+          className="touch-btn min-h-10 px-3 rounded-lg bg-amber-900 border border-amber-700 text-sm"
+          title={t('admin.catalog.lowStockViewTool', { defaultValue: 'View low stock items' })}
+          onClick={() => setLowStockModalOpen(true)}
+        >
+          {t('admin.catalog.lowStockView', { defaultValue: 'Low Stock' })} ({lowStockProductCount})
+        </button>
       </div>
       {toast && <ActionToast kind="info" message={toast} onClose={() => setToast(null)} />}
       <p className="text-xs text-slate-400">{t('admin.catalog.hint')}</p>
@@ -444,8 +474,8 @@ export function CatalogPage({
         <p className="text-xs text-amber-300">
           {t('admin.catalog.lowStockModelsWarning', {
             count: lowStockProductCount,
-            n: LOW_STOCK_THRESHOLD,
-            defaultValue: `Kam qoldiqdagi modellar: ${lowStockProductCount} ta (< ${LOW_STOCK_THRESHOLD})`,
+            n: lowStockThreshold,
+            defaultValue: `Kam qoldiqdagi modellar: ${lowStockProductCount} ta (< ${lowStockThreshold})`,
           })}
         </p>
       )}
@@ -521,11 +551,14 @@ export function CatalogPage({
                   disabled={!selectedBrand}
                 >
                   <option value="">{t('admin.catalog.model')}</option>
-                  {modelOptions.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name_uz}
-                    </option>
-                  ))}
+                  {modelOptions.map((p) => {
+                    const brandName = categories.find(c => c.id === p.category)?.name_uz || ''
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {brandName && `${brandName} - `}{p.name_uz}
+                      </option>
+                    )
+                  })}
                 </select>
                 <div className="ml-2">
                   <button
@@ -565,41 +598,61 @@ export function CatalogPage({
             {applianceOpen && (
               <div className="p-3 rounded-xl border border-slate-800 bg-slate-950 mt-3 space-y-2">
                 <div className="text-sm text-slate-300">{t('admin.catalog.wizard.applianceFormTitle')}</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-slate-400">{t('admin.catalog.customName', { defaultValue: 'Custom Name (optional)' })}</label>
+                    <input 
+                      type="text"
+                      className="touch-btn px-3 py-2 rounded-xl bg-slate-900 border border-slate-700" 
+                      value={apCustomName} 
+                      onChange={(e) => setApCustomName(e.target.value)} 
+                      placeholder={t('admin.catalog.customNamePlaceholder', { defaultValue: 'e.g. Samsung Refrigerator 330L' })} 
+                    />
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs text-slate-400">{t('admin.catalog.purchasePricePlaceholder')}</label>
+                    <label className="text-xs text-slate-400">{t('admin.catalog.purchase', 'Purchase Price')}</label>
                     <input 
+                      type="text"
+                      inputMode="decimal"
                       className="touch-btn px-3 py-2 rounded-xl bg-slate-900 border border-slate-700" 
                       value={apPurchase} 
                       onChange={(e) => setApPurchase(e.target.value)} 
-                      placeholder={t('admin.catalog.purchasePricePlaceholder')} 
+                      placeholder={t('admin.catalog.purchasePricePlaceholder', 'e.g. 100000')} 
                     />
                   </div>
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs text-slate-400">{t('admin.catalog.listPricePlaceholder')}</label>
+                    <label className="text-xs text-slate-400">{t('admin.catalog.price', 'Selling Price')}</label>
                     <input 
+                      type="text"
+                      inputMode="decimal"
                       className="touch-btn px-3 py-2 rounded-xl bg-slate-900 border border-slate-700" 
                       value={apList} 
                       onChange={(e) => setApList(e.target.value)} 
-                      placeholder={t('admin.catalog.listPricePlaceholder')} 
+                      placeholder={t('admin.catalog.listPricePlaceholder', 'e.g. 150000 (optional)')} 
                     />
                   </div>
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs text-slate-400">{t('admin.catalog.initialQtyPlaceholder')}</label>
+                    <label className="text-xs text-slate-400">{t('admin.catalog.initialQty', 'Initial Stock')}</label>
                     <input 
+                      type="text"
+                      inputMode="numeric"
                       className="touch-btn px-3 py-2 rounded-xl bg-slate-900 border border-slate-700" 
                       value={apQty} 
                       onChange={(e) => setApQty(e.target.value)} 
-                      placeholder={t('admin.catalog.initialQtyPlaceholder')} 
+                      placeholder={t('admin.catalog.initialQtyPlaceholder', 'e.g. 10')} 
                     />
                   </div>
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs text-slate-400">{t('admin.catalog.barcodePlaceholder')}</label>
+                    <label className="text-xs text-slate-400">{t('admin.catalog.barcode', 'Barcode')}</label>
                     <input 
+                      type="text"
+                      inputMode="text"
                       className="touch-btn px-3 py-2 rounded-xl bg-slate-900 border border-slate-700" 
                       value={apBarcode} 
                       onChange={(e) => setApBarcode(e.target.value)} 
-                      placeholder={t('admin.catalog.barcodePlaceholder')} 
+                      placeholder={t('admin.catalog.barcodePlaceholder', 'e.g. 1234567890123')} 
                     />
                   </div>
                 </div>
@@ -622,6 +675,7 @@ export function CatalogPage({
           <thead className="bg-slate-900 text-slate-400">
             <tr>
               <th className="text-left p-2">{t('admin.catalog.product')}</th>
+              <th className="text-left p-2">{t('admin.catalog.customName', { defaultValue: 'Custom Name' })}</th>
               <th className="text-left p-2">{t('admin.catalog.barcode')}</th>
               <th className="text-right p-2">{t('admin.catalog.stock')}</th>
               <th className="text-right p-2">{t('admin.catalog.purchase')}</th>
@@ -633,13 +687,23 @@ export function CatalogPage({
           <tbody>
             {variants.map((v) => {
               const modelTotalStock = productStockTotals[v.product] || 0
-              const isModelLow = modelTotalStock < LOW_STOCK_THRESHOLD
-              const displayName = i18n.language.startsWith('ru')
-                ? (v.product_custom_name_ru || v.product_name_ru || v.product_name_uz)
-                : (v.product_custom_name_uz || v.product_name_uz)
+              const isModelLow = modelTotalStock < lowStockThreshold
+              const modelName = i18n.language.startsWith('ru')
+                ? v.product_name_ru
+                : v.product_name_uz
+              const categoryName = i18n.language.startsWith('ru')
+                ? v.category_name_ru
+                : v.category_name_uz
+              const customName = i18n.language.startsWith('ru')
+                ? v.product_custom_name_ru
+                : v.product_custom_name_uz
               return (
               <tr key={v.id} className={`border-t border-slate-800 ${catalogVariantRowClass(v)}`}>
-                <td className="p-2">{displayName}</td>
+                <td className="p-2">
+                  <div>{categoryName}</div>
+                  {modelName && <div className="text-xs text-slate-400">{modelName}</div>}
+                </td>
+                <td className="p-2 text-slate-300">{customName || '-'}</td>
                 <td className="p-2">{v.barcode}</td>
                 <td className="p-2 text-right">
                   <button
@@ -755,18 +819,22 @@ export function CatalogPage({
             rowComponent={({ index, style, rows }: RowComponentProps<{ rows: Variant[] }>) => {
               const v = rows[index]
               const modelTotalStock = productStockTotals[v.product] || 0
-              const isModelLow = modelTotalStock < LOW_STOCK_THRESHOLD
+              const isModelLow = modelTotalStock < lowStockThreshold
               return (
                 <div
                   style={style}
-                  className={`grid grid-cols-[1.3fr_1fr_0.8fr_0.7fr_0.8fr_2fr] items-center border-b border-slate-800 px-2 text-sm ${catalogVariantRowClass(v)}`}
+                  className={`grid grid-cols-[1.3fr_1.2fr_1fr_0.8fr_0.7fr_2fr] items-center border-b border-slate-800 px-2 text-sm ${catalogVariantRowClass(v)}`}
                 >
                   <div>
                     {i18n.language.startsWith('ru')
-                      ? v.product_name_ru || v.product_name_uz
-                      : v.product_name_uz}
+                      ? v.category_name_ru
+                      : v.category_name_uz}
                   </div>
-                  <div>—</div>
+                  <div className="text-slate-300">
+                    {i18n.language.startsWith('ru')
+                      ? v.product_custom_name_ru || '-'
+                      : v.product_custom_name_uz || '-'}
+                  </div>
                   <div>{v.barcode}</div>
                   <div className="text-right">
                     <div>{v.stock_qty}</div>
@@ -966,6 +1034,7 @@ export function CatalogPage({
                 <thead className="bg-slate-950 text-slate-400">
                   <tr>
                     <th className="text-left p-2">{t('admin.catalog.product')}</th>
+                    <th className="text-left p-2">{t('admin.catalog.customName', { defaultValue: 'Custom Name' })}</th>
                     <th className="text-left p-2">{t('admin.catalog.barcode')}</th>
                     <th className="text-right p-2">{t('admin.catalog.copies')}</th>
                   </tr>
@@ -974,6 +1043,9 @@ export function CatalogPage({
                   {Object.entries(queueMap).map(([variantId, copies]) => {
                     const v = variants.find((row) => row.id === variantId)
                     if (!v) return null
+                    const customName = i18n.language.startsWith('ru')
+                      ? v.product_custom_name_ru
+                      : v.product_custom_name_uz
                     return (
                       <tr key={variantId} className="border-t border-slate-800">
                         <td className="p-2">
@@ -981,6 +1053,7 @@ export function CatalogPage({
                             ? v.product_name_ru || v.product_name_uz
                             : v.product_name_uz}
                         </td>
+                        <td className="p-2 text-slate-300">{customName || '-'}</td>
                         <td className="p-2">{v.barcode}</td>
                         <td className="p-2 text-right">
                           <div className="w-28 ml-auto">
@@ -1001,7 +1074,7 @@ export function CatalogPage({
                   })}
                   {Object.keys(queueMap).length === 0 && (
                     <tr>
-                      <td colSpan={3} className="p-4 text-center text-slate-500">{t('admin.catalog.queueEmpty')}</td>
+                      <td colSpan={4} className="p-4 text-center text-slate-500">{t('admin.catalog.queueEmpty')}</td>
                     </tr>
                   )}
                 </tbody>
@@ -1244,6 +1317,89 @@ export function CatalogPage({
               >
                 {t('admin.catalog.delete')}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {lowStockModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-black/70 p-4"
+          onClick={() => setLowStockModalOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal
+            className="my-auto w-full max-w-2xl max-h-[min(90dvh,90svh)] overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-4 space-y-4 shadow-xl kiosk-scrollbar"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">{t('admin.catalog.lowStockTitle', { defaultValue: 'Low Stock Items' })}</h3>
+              <button
+                type="button"
+                className="touch-btn min-h-10 px-3 rounded bg-slate-800 border border-slate-700"
+                onClick={() => setLowStockModalOpen(false)}
+              >
+                {t('admin.common.close', { defaultValue: 'Close' })}
+              </button>
+            </div>
+            <div className="space-y-2">
+              <label className="block text-xs text-slate-400">
+                {t('admin.catalog.filterByBrand', { defaultValue: 'Filter by brand' })}
+              </label>
+              <select
+                className="touch-btn w-full min-h-10 px-3 rounded bg-slate-950 border border-slate-700 text-sm"
+                value={lowStockFilterBrand}
+                onChange={(e) => setLowStockFilterBrand(e.target.value)}
+              >
+                <option value="">{t('admin.catalog.allBrands', { defaultValue: 'All brands' })}</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name_uz}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="max-h-96 overflow-auto kiosk-scrollbar rounded border border-slate-800">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-900 text-slate-400 sticky top-0">
+                  <tr>
+                    <th className="text-left p-2">{t('admin.catalog.brand')}</th>
+                    <th className="text-left p-2">{t('admin.catalog.model')}</th>
+                    <th className="text-right p-2">{t('admin.catalog.stock')}</th>
+                    <th className="text-right p-2">{t('admin.catalog.price')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {variants
+                    .filter((v) => {
+                      const stock = Number(v.stock_qty || 0)
+                      if (stock >= lowStockThreshold) return false
+                      if (lowStockFilterBrand && v.category_name_uz !== categories.find(c => c.id === lowStockFilterBrand)?.name_uz) return false
+                      return true
+                    })
+                    .map((v) => {
+                      const product = products.find((p) => p.id === v.product)
+                      return (
+                        <tr key={v.id} className="border-t border-slate-800 hover:bg-slate-800/50">
+                          <td className="p-2">{v.category_name_uz || '-'}</td>
+                          <td className="p-2">{product?.name_uz || '-'}</td>
+                          <td className="p-2 text-right text-amber-300 font-medium">{v.stock_qty}</td>
+                          <td className="p-2 text-right">{formatMoney(v.list_price || v.purchase_price)}</td>
+                        </tr>
+                      )
+                    })}
+                </tbody>
+              </table>
+              {variants.filter((v) => {
+                const stock = Number(v.stock_qty || 0)
+                if (stock >= lowStockThreshold) return false
+                if (lowStockFilterBrand && v.category_name_uz !== categories.find(c => c.id === lowStockFilterBrand)?.name_uz) return false
+                return true
+              }).length === 0 && (
+                <div className="p-4 text-center text-slate-400">
+                  {t('admin.catalog.noLowStock', { defaultValue: 'No low stock items' })}
+                </div>
+              )}
             </div>
           </div>
         </div>

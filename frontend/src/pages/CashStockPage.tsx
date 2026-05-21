@@ -47,13 +47,19 @@ export function CashStockPage({ role }: { role: UserRole | null }) {
 
   const maxPage = data ? Math.max(1, Math.ceil(data.count / 20)) : 1
   const rows = data?.results ?? []
-  const colSpan = showPurchase ? 7 : 6
+  const colSpan = showPurchase ? 8 : 7
   const langRu = i18n.language.startsWith('ru')
 
   function rowBrand(v: CashierStockVariant | Variant): string {
     const uz = 'category_name_uz' in v ? v.category_name_uz : undefined
     if (!uz) return '—'
     return langRu ? v.category_name_ru || uz : uz
+  }
+
+  function rowCustomName(v: CashierStockVariant | Variant): string {
+    const uz = 'product_custom_name_uz' in v ? v.product_custom_name_uz : undefined
+    if (!uz) return '—'
+    return langRu ? (('product_custom_name_ru' in v ? v.product_custom_name_ru : undefined) || uz) : uz
   }
 
   function stockRowClass(v: CashierStockVariant | Variant) {
@@ -85,7 +91,7 @@ export function CashStockPage({ role }: { role: UserRole | null }) {
             <tr>
               <th className="text-left p-2">{t('admin.catalog.brand')}</th>
               <th className="text-left p-2">{t('admin.catalog.product')}</th>
-              <th className="text-left p-2">{t('admin.catalog.sizeColor')}</th>
+              <th className="text-left p-2">{t('admin.catalog.customName', { defaultValue: 'Custom Name' })}</th>
               <th className="text-left p-2">{t('admin.catalog.barcode')}</th>
               <th className="text-right p-2">{t('admin.catalog.stock')}</th>
               {showPurchase && (
@@ -108,7 +114,7 @@ export function CashStockPage({ role }: { role: UserRole | null }) {
                   <td className="p-2">
                     {langRu ? v.product_name_ru || v.product_name_uz : v.product_name_uz}
                   </td>
-                  <td className="p-2">—</td>
+                  <td className="p-2 text-slate-300">{rowCustomName(v)}</td>
                   <td className="p-2 font-mono text-xs">{v.barcode}</td>
                   <td className="p-2 text-right tabular-nums">{v.stock_qty}</td>
                   {showPurchase && (

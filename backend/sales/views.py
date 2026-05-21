@@ -513,8 +513,6 @@ class SaleReturnLinesView(APIView):
                 "payments",
                 "refunds",
                 "lines__variant__product__category",
-                "lines__variant__color",
-                "lines__variant__size",
             ).select_related("cashier", "debt_record").get(pk=pk)
         except Sale.DoesNotExist:
             return Response({"code": "SALE_NOT_FOUND", "detail": "Sale not found."}, status=404)

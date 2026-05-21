@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { fetchLicenseStatus, fetchPinUsers, loginWithPin, type LicenseStatus } from '../api'
 import { getTauriMachineId } from '../utils/tauriMachineId'
 import { PinNumpadPanel } from '../components/PinNumpadPanel'
+import { loadLocale } from '../i18n'
 
 export function LoginPage({ onDone }: { onDone: () => void | Promise<void> }) {
   const { t, i18n } = useTranslation()
@@ -74,7 +75,7 @@ export function LoginPage({ onDone }: { onDone: () => void | Promise<void> }) {
                   ? 'bg-emerald-700 border-emerald-500 text-white'
                   : 'bg-slate-700 border-slate-600 text-slate-200'
               }`}
-              onClick={() => i18n.changeLanguage('uz')}
+              onClick={() => void loadLocale('uz')}
             >
               {t('lang.uz')}
             </button>
@@ -85,7 +86,7 @@ export function LoginPage({ onDone }: { onDone: () => void | Promise<void> }) {
                   ? 'bg-emerald-700 border-emerald-500 text-white'
                   : 'bg-slate-700 border-slate-600 text-slate-200'
               }`}
-              onClick={() => i18n.changeLanguage('ru')}
+              onClick={() => void loadLocale('ru')}
             >
               {t('lang.ru')}
             </button>

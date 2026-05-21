@@ -100,6 +100,10 @@ def _tspl_layout_centered(
     x_bc = margin + max(0, (inner_w - bc_w_est) // 2)
 
     # Vertical block: center the whole stack in label coordinates (margin box)
+    # Note: sc_line_h is not used in simplified layout (no size/color), set to 0
+    sc_line_h = 0
+    sc_font = "1"
+    sc_char = 8
     stack_h = sc_line_h + gap_small + bc_h + gap_after_bc + price_line_h
     y0 = margin + max(0, (inner_h - stack_h) // 2)
 
@@ -148,9 +152,12 @@ class TsplRenderer:
         variant = label_payload["variant"]
         size_key = (label_payload.get("size") or "40x30").strip()
         copies = max(1, min(200, int(label_payload.get("copies") or 1)))
+        show_price = label_payload.get("show_price", settings.show_price_on_labels_default if hasattr(settings, 'show_price_on_labels_default') else True)
 
         barcode = (variant.barcode or "").strip() or "0"
-        price = _tspl_literal(f"{self._money(variant.list_price)} СОМ", max_len=22)
+        # Handle null list_price - use purchase_price as fallback or "N/A"
+        price_value = variant.list_price or variant.purchase_price or 0
+        price = _tspl_literal(f"{self._money(price_value)} СОМ", max_len=22) if show_price else ""
 
         w_mm, h_mm = _tspl_dimensions_mm(size_key)
         lay = _tspl_layout_centered(w_mm=w_mm, h_mm=h_mm, barcode=barcode)
@@ -159,7 +166,7 @@ class TsplRenderer:
         x_price = max(
             8,
             (w_dots - _text_width_dots(price, char_dots=lay["price_char"])) // 2,
-        )
+        ) if show_price else 0
 
         header = [
             f"SIZE {w_mm} mm,{h_mm} mm",
@@ -168,16 +175,16 @@ class TsplRenderer:
         ]
         blocks: list[str] = []
         for _ in range(copies):
-            blocks.extend(
-                [
-                    "CLS",
-                    # Largest element: CODE128, human-readable under bars
-                    f'BARCODE {lay["x_bc"]},{lay["y_bc"]},"128",{lay["bc_h"]},1,0,{lay["nar"]},{lay["wide"]},"{barcode}"',
-                    # Price under barcode (centered)
-                    f'TEXT {x_price},{lay["y_price"]},"{lay["price_font"]}",0,{lay["price_xmul"]},{lay["price_ymul"]},"{price}"',
-                    "PRINT 1,1",
-                ]
-            )
+            block = [
+                "CLS",
+                # Largest element: CODE128, human-readable under bars
+                f'BARCODE {lay["x_bc"]},{lay["y_bc"]},"128",{lay["bc_h"]},1,0,{lay["nar"]},{lay["wide"]},"{barcode}"',
+            ]
+            # Price under barcode (centered) - only if show_price is True
+            if show_price and price:
+                block.append(f'TEXT {x_price},{lay["y_price"]},"{lay["price_font"]}",0,{lay["price_xmul"]},{lay["price_ymul"]},"{price}"')
+            block.extend(["PRINT 1,1"])
+            blocks.extend(block)
 
         tspl = header + blocks
         return ("\r\n".join(tspl) + "\r\n").encode("ascii", errors="ignore")

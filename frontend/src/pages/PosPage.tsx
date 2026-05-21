@@ -25,6 +25,7 @@ import { requestAdminDataRefresh } from '../utils/adminDataRefresh'
 import { TouchNumpad } from '../components/TouchNumpad'
 import { PinNumpadPanel } from '../components/PinNumpadPanel'
 import { ActionToast } from '../components/ActionToast'
+import { loadLocale } from '../i18n'
 
 Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP })
 
@@ -527,8 +528,8 @@ export function PosPage({
   }
 
   function addVariantToCart(v: PosVariant, opts?: { clearSearch?: boolean }) {
-    const productName = i18n.language.startsWith('ru') ? v.product_name_ru || v.product_name_uz : v.product_name_uz
-    const customName = i18n.language.startsWith('ru') ? v.product_custom_name_ru || v.product_custom_name_uz : v.product_custom_name_uz
+    const brandName = i18n.language.startsWith('ru') ? v.category_name_ru : v.category_name_uz
+    const modelName = i18n.language.startsWith('ru') ? v.product_name_ru || v.product_name_uz : v.product_name_uz
     // If variant has no authoritative list price, prompt cashier for sale-time price.
     if (v.list_price == null) {
       setPromptPriceVariant(v as any)
@@ -541,7 +542,7 @@ export function PosPage({
       productId: v.product,
       colorId: '',
       barcode: v.barcode ?? '',
-      name: customName || productName,
+      name: `${brandName} ${modelName}`.trim(),
       sizeLabel: '',
       colorLabel: '',
       listPrice: String(v.list_price),
@@ -1088,7 +1089,9 @@ export function PosPage({
               className="max-h-52 overflow-y-auto kiosk-scrollbar rounded-xl border border-slate-700 bg-slate-900/90 divide-y divide-slate-800"
               role="listbox"
             >
-              {searchResults.map((v) => (
+              {searchResults.map((v) => {
+                const customName = i18n.language.startsWith('ru') ? v.product_custom_name_ru : v.product_custom_name_uz
+                return (
                 <li key={v.id}>
                   <button
                     type="button"
@@ -1100,6 +1103,7 @@ export function PosPage({
                         ? v.product_name_ru || v.product_name_uz
                         : v.product_name_uz}
                     </div>
+                    {customName && <div className="text-xs text-slate-300 italic">{customName}</div>}
                     <div className="text-xs text-slate-400">
                       {formatMoney(String(v.list_price))} ·{' '}
                       {t('admin.catalog.stock')}: {v.stock_qty}
@@ -1107,7 +1111,8 @@ export function PosPage({
                     {v.barcode ? <div className="text-xs text-slate-500 font-mono mt-0.5">{v.barcode}</div> : null}
                   </button>
                 </li>
-              ))}
+              )
+              })}
             </ul>
           )}
 
@@ -1623,7 +1628,7 @@ export function PosPage({
                 ? 'bg-emerald-700 border-emerald-500 text-white'
                 : 'bg-slate-800 border-slate-600 text-slate-200'
             }`}
-            onClick={() => i18n.changeLanguage('uz')}
+            onClick={() => void loadLocale('uz')}
           >
             {t('lang.uz')}
           </button>
@@ -1634,7 +1639,7 @@ export function PosPage({
                 ? 'bg-emerald-700 border-emerald-500 text-white'
                 : 'bg-slate-800 border-slate-600 text-slate-200'
             }`}
-            onClick={() => i18n.changeLanguage('ru')}
+            onClick={() => void loadLocale('ru')}
           >
             {t('lang.ru')}
           </button>

@@ -22,6 +22,24 @@ def clear_all_data():
     print("🗑️  Clearing all data...")
     
     with transaction.atomic():
+        # Clear related data first (in order of dependencies)
+        from sales.models import Sale, SaleLine, SaleRefund
+        from inventory.models import InventoryMovement, StocktakeSession, StocktakeLine
+        from debt.models import Debt
+        from expenses.models import ShopExpense
+        from catalog.models import SerialNumber
+        
+        # Clear in dependency order (respect protected foreign keys)
+        SaleRefund.objects.all().delete()
+        Debt.objects.all().delete()  # Delete before Sale (protected FK)
+        SaleLine.objects.all().delete()
+        Sale.objects.all().delete()
+        SerialNumber.objects.all().delete()
+        InventoryMovement.objects.all().delete()
+        StocktakeLine.objects.all().delete()
+        StocktakeSession.objects.all().delete()
+        ShopExpense.objects.all().delete()
+        
         # Clear catalog data
         ProductVariant.objects.all().delete()
         Product.objects.all().delete()
@@ -56,25 +74,22 @@ def seed_appliance_data():
         samsung_fridge = Product.objects.create(
             category=samsung,
             name_uz="Muzlatgich",
-            name_ru="Холодильник",
-            custom_name_uz="Samsung Side-by-Side",
-            custom_name_ru="Samsung Side-by-Side"
+            name_ru="Холодильник"
+            # No custom name - it's optional
         )
         
         samsung_washer = Product.objects.create(
             category=samsung,
             name_uz="Kir yuvish mashinasi",
-            name_ru="Стиральная машина",
-            custom_name_uz="Samsung EcoBubble",
-            custom_name_ru="Samsung EcoBubble"
+            name_ru="Стиральная машина"
         )
         
         samsung_tv = Product.objects.create(
             category=samsung,
             name_uz="Televizor",
             name_ru="Телевизор",
-            custom_name_uz="Samsung QLED 55\"",
-            custom_name_ru="Samsung QLED 55\""
+            custom_name_uz="55 dyuym QLED",
+            custom_name_ru="55 дюймов QLED"
         )
         
         # LG products
@@ -82,16 +97,16 @@ def seed_appliance_data():
             category=lg,
             name_uz="Muzlatgich",
             name_ru="Холодильник",
-            custom_name_uz="LG InstaView",
-            custom_name_ru="LG InstaView"
+            custom_name_uz="InstaView",
+            custom_name_ru="InstaView"
         )
         
         lg_ac = Product.objects.create(
             category=lg,
             name_uz="Konditsioner",
             name_ru="Кондиционер",
-            custom_name_uz="LG Dual Inverter",
-            custom_name_ru="LG Dual Inverter"
+            custom_name_uz="Inverter",
+            custom_name_ru="Inverter"
         )
         
         # Bosch products
@@ -99,8 +114,8 @@ def seed_appliance_data():
             category=bosch,
             name_uz="Idish yuvish mashinasi",
             name_ru="Посудомоечная машина",
-            custom_name_uz="Bosch Serie 6",
-            custom_name_ru="Bosch Serie 6"
+            custom_name_uz="Serie 6",
+            custom_name_ru="Serie 6"
         )
         
         # Create variants
@@ -119,7 +134,7 @@ def seed_appliance_data():
                 'barcode': 'SAM-WASH-001',
                 'purchase_price': '3200000',
                 'list_price': '4000000',
-                'stock_qty': 8,
+                'stock_qty': 3,
             },
             # Samsung TV
             {
@@ -127,7 +142,7 @@ def seed_appliance_data():
                 'barcode': 'SAM-TV-55-001',
                 'purchase_price': '6000000',
                 'list_price': '7500000',
-                'stock_qty': 3,
+                'stock_qty': 4,
             },
             # LG Fridge
             {
@@ -135,7 +150,7 @@ def seed_appliance_data():
                 'barcode': 'LG-FRIDGE-001',
                 'purchase_price': '5000000',
                 'list_price': '6200000',
-                'stock_qty': 4,
+                'stock_qty': 2,
             },
             # LG AC
             {
@@ -151,6 +166,38 @@ def seed_appliance_data():
                 'barcode': 'BOSCH-DW-001',
                 'purchase_price': '4000000',
                 'list_price': '5000000',
+                'stock_qty': 2,
+            },
+            # Samsung Muzlatgich (variant 2)
+            {
+                'product': samsung_fridge,
+                'barcode': 'SAM-FRIDGE-002',
+                'purchase_price': '3800000',
+                'list_price': '4800000',
+                'stock_qty': 3,
+            },
+            # LG Muzlatgich (variant 2)
+            {
+                'product': lg_fridge,
+                'barcode': 'LG-FRIDGE-002',
+                'purchase_price': '4500000',
+                'list_price': '5700000',
+                'stock_qty': 4,
+            },
+            # Samsung Washer (variant 2)
+            {
+                'product': samsung_washer,
+                'barcode': 'SAM-WASH-002',
+                'purchase_price': '2900000',
+                'list_price': '3700000',
+                'stock_qty': 2,
+            },
+            # LG AC (variant 2)
+            {
+                'product': lg_ac,
+                'barcode': 'LG-AC-002',
+                'purchase_price': '3200000',
+                'list_price': '4000000',
                 'stock_qty': 6,
             },
         ]
@@ -184,6 +231,22 @@ def seed_appliance_data():
             profile.pin_hash = make_password('1111')
             profile.save()
             print("✓ Created cashier user (cashier/pass12345, PIN: 1111)")
+        
+        # Create a product WITHOUT list_price to test price entry at sale time
+        if not ProductVariant.objects.filter(barcode='TEST-NO-PRICE-001').exists():
+            test_product = Product.objects.create(
+                category=samsung,
+                name_uz="Test Mahsulot (Narxsiz)",
+                name_ru="Тестовый товар (без цены)"
+            )
+            ProductVariant.objects.create(
+                product=test_product,
+                barcode='TEST-NO-PRICE-001',
+                purchase_price='1000000',
+                list_price=None,  # NO list_price - should prompt for price at sale time
+                stock_qty=2  # LOW STOCK
+            )
+            print("✓ Created test product WITHOUT list_price (for price entry testing)")
         
         # Update store settings
         settings, _ = StoreSettings.objects.get_or_create(id=1)

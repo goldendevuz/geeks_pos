@@ -534,7 +534,7 @@ def _label_escpos_barcode_height(size: str) -> int:
     return 72
 
 
-def label_escpos_bytes(*, variant, size: str = "40x30", copies: int = 1) -> bytes:
+def label_escpos_bytes(*, variant, size: str = "40x30", copies: int = 1, show_price: bool = True) -> bytes:
     from escpos.printer import Dummy
 
     settings = StoreSettings.get_solo()
@@ -557,7 +557,9 @@ def label_escpos_bytes(*, variant, size: str = "40x30", copies: int = 1) -> byte
         brand_src = (settings.brand_name or "").strip() or cat
         brand = brand_src[:cols]
         model = (variant.product.name_uz or "")[:cols]
-        price = _format_amount(variant.list_price)
+        # Handle null list_price - use purchase_price as fallback or 0
+        price_value = variant.list_price or variant.purchase_price or 0
+        price = _format_amount(price_value) if show_price else ""
         bc_h = _label_escpos_barcode_height(size)
         skey = (size or "40x30").strip().lower()
         bc_w = 2 if skey == "40x30" else 3
@@ -592,11 +594,12 @@ def label_escpos_bytes(*, variant, size: str = "40x30", copies: int = 1) -> byte
                     align_ct=False,
                 )
             p.text("\n")
-            if skey == "40x30":
-                p.set(align="center", width=1, height=2)
-            else:
-                p.set(align="center", width=2, height=2)
-            p.text(f"{price}\n")
+            if show_price and price:
+                if skey == "40x30":
+                    p.set(align="center", width=1, height=2)
+                else:
+                    p.set(align="center", width=2, height=2)
+                p.text(f"{price}\n")
         try:
             p.cut(mode="PART")
         except Exception:

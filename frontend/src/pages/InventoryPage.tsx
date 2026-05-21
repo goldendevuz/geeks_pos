@@ -498,6 +498,7 @@ export function InventoryPage({
                   <thead className="bg-slate-900 text-slate-400 sticky top-0 z-10">
                     <tr>
                       <th className="text-left p-3">{t('admin.catalog.product')}</th>
+                      <th className="text-left p-3">{t('admin.catalog.customName', { defaultValue: 'Custom Name' })}</th>
                       <th className="text-left p-3">{t('admin.catalog.barcode')}</th>
                       <th className="text-right p-3 whitespace-nowrap">{t('admin.inventory.inComputer')}</th>
                       <th className="text-right p-3 whitespace-nowrap">{t('admin.inventory.youCounted')}</th>
@@ -512,6 +513,11 @@ export function InventoryPage({
                           {langRu
                             ? (ln as typeof ln & { product_name_ru?: string }).product_name_ru || ln.product_name_uz
                             : ln.product_name_uz}
+                        </td>
+                        <td className="p-3 text-slate-300">
+                          {langRu
+                            ? (ln as typeof ln & { product_custom_name_ru?: string }).product_custom_name_ru || '-'
+                            : (ln as typeof ln & { product_custom_name_uz?: string }).product_custom_name_uz || '-'}
                         </td>
                         <td className="p-3 font-mono text-xs">{ln.barcode}</td>
                         <td className="p-3 text-right tabular-nums text-slate-300">{ln.expected_qty}</td>

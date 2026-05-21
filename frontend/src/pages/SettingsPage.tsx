@@ -54,6 +54,9 @@ export function SettingsPage({
     scanner_prefix: string
     scanner_suffix: string
     lock_timeout_minutes?: number
+    low_stock_threshold?: number
+    show_price_on_labels_default?: boolean
+    show_selling_price_in_catalog?: boolean
     logo?: File | null
   }) => Promise<void>
   onSaveIntegrations: (data: IntegrationSettings) => Promise<void>
@@ -98,6 +101,9 @@ export function SettingsPage({
     scanner_prefix: settings?.scanner_prefix ?? '',
     scanner_suffix: settings?.scanner_suffix ?? '\t',
     lock_timeout_minutes: settings?.lock_timeout_minutes ?? 5,
+    low_stock_threshold: settings?.low_stock_threshold ?? 3,
+    show_price_on_labels_default: settings?.show_price_on_labels_default ?? true,
+    show_selling_price_in_catalog: settings?.show_selling_price_in_catalog ?? false,
   })
   const [pinUsers, setPinUsers] = useState<PinUser[]>([])
   const [pinDrafts, setPinDrafts] = useState<Record<string, string>>({})
@@ -141,6 +147,9 @@ export function SettingsPage({
       scanner_prefix: settings?.scanner_prefix ?? '',
       scanner_suffix: settings?.scanner_suffix ?? '\t',
       lock_timeout_minutes: settings?.lock_timeout_minutes ?? 5,
+      low_stock_threshold: settings?.low_stock_threshold ?? 3,
+      show_price_on_labels_default: settings?.show_price_on_labels_default ?? true,
+      show_selling_price_in_catalog: settings?.show_selling_price_in_catalog ?? false,
     })
   }, [settings])
 
@@ -714,7 +723,65 @@ export function SettingsPage({
                 setForm({ ...form, lock_timeout_minutes: Math.max(1, Number(e.target.value || 5)) })
               }
             />
-         
+            </div>
+            <div className={sectionCardCls}>
+              <div className="inline-flex items-center gap-2 text-slate-200">
+                <Cog className="h-4 w-4 text-emerald-400" />
+                <h3 className="font-medium">{t('admin.settings.inventoryPricing', { defaultValue: 'Inventory & Pricing' })}</h3>
+              </div>
+              <div className="grid md:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-xs text-slate-400">
+                    {t('admin.settings.lowStockThreshold', { defaultValue: 'Low Stock Threshold (units)' })}
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    className={inputCls}
+                    value={form.low_stock_threshold ?? 3}
+                    onChange={(e) => {
+                      const val = Math.max(1, Number(e.target.value || 3))
+                      setForm({ ...form, low_stock_threshold: val })
+                    }}
+                  />
+                  <p className="text-xs text-slate-500">
+                    {t('admin.settings.lowStockThresholdHelp', { defaultValue: 'Products below this quantity will be marked as low stock' })}
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-3 min-h-12 text-base">
+                    <input
+                      type="checkbox"
+                      className="h-5 w-5"
+                      checked={form.show_price_on_labels_default ?? true}
+                      onChange={(e) => {
+                        setForm({ ...form, show_price_on_labels_default: e.target.checked })
+                      }}
+                    />
+                    {t('admin.settings.showPriceOnLabels', { defaultValue: 'Show price on labels by default' })}
+                  </label>
+                  <p className="text-xs text-slate-500">
+                    {t('admin.settings.showPriceOnLabelsHelp', { defaultValue: 'Display selling price on printed stickers' })}
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-3 min-h-12 text-base">
+                    <input
+                      type="checkbox"
+                      className="h-5 w-5"
+                      checked={form.show_selling_price_in_catalog ?? false}
+                      onChange={(e) => {
+                        setForm({ ...form, show_selling_price_in_catalog: e.target.checked })
+                      }}
+                    />
+                    {t('admin.settings.showSellingPrice', { defaultValue: 'Show selling price in catalog' })}
+                  </label>
+                  <p className="text-xs text-slate-500">
+                    {t('admin.settings.showSellingPriceHelp', { defaultValue: 'Display selling price in product list and POS' })}
+                  </p>
+                </div>
+              </div>
             </div>
             
               <div className="flex flex-wrap gap-2 items-center rounded-2xl border border-slate-700 bg-slate-900/70 p-4">

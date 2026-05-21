@@ -6,6 +6,7 @@ import {
   applyStocktake,
   createCategory,
   createProduct,
+  updateProduct,
   createStocktakeSession,
   createVariantBulkGrid,
   deleteCategory,
@@ -536,6 +537,10 @@ export default function App() {
                   await createProduct(payload)
                   await refreshAdminData()
                 }}
+                onUpdateProduct={async (productId: string, payload: any) => {
+                  await updateProduct(productId, payload)
+                  await refreshAdminData()
+                }}
                 onDeleteCategory={async (categoryId) => {
                   await deleteCategory(categoryId)
                   await refreshAdminData()
@@ -549,11 +554,11 @@ export default function App() {
                   await refreshAdminData()
                 }}
                 onPrintSticker={async (variantId, copies, size) => {
-                  const { raw_base64, escpos_base64 } = await fetchLabelEscpos(variantId, size, copies)
+                  const { raw_base64, escpos_base64 } = await fetchLabelEscpos(variantId, size, copies, settings?.show_price_on_labels_default)
                   await dispatchLabel(raw_base64 || escpos_base64, settings)
                 }}
                 onPrintStickerQueue={async (items, size) => {
-                  const out = await fetchLabelQueueEscpos(items, size)
+                  const out = await fetchLabelQueueEscpos(items, size, settings?.show_price_on_labels_default)
                   for (const row of out.items) {
                     await dispatchLabel(row.raw_base64 || row.escpos_base64, settings)
                   }
@@ -704,6 +709,7 @@ function AdminPanel(props: {
   onCreateVariantBulk: (payload: { product_id: string; matrix: BulkGridCell[] }) => Promise<Variant[]>
   onCreateCategory: (payload: { name_uz: string; name_ru: string }) => Promise<void>
   onCreateProduct: (payload: { category: string; name_uz: string; name_ru: string }) => Promise<void>
+  onUpdateProduct: (productId: string, payload: { custom_name_uz?: string; custom_name_ru?: string; custom_name_uz_cyrillic?: string }) => Promise<void>
   onDeleteCategory: (categoryId: string) => Promise<void>
   onDeleteProduct: (productId: string) => Promise<void>
   onToggleVariant: (v: Variant) => Promise<void>
@@ -855,6 +861,7 @@ function AdminPanel(props: {
                 onCreateVariantBulk={props.onCreateVariantBulk}
                 onCreateCategory={props.onCreateCategory}
                 onCreateProduct={props.onCreateProduct}
+                onUpdateProduct={props.onUpdateProduct}
                 onDeleteCategory={props.onDeleteCategory}
                 onDeleteProduct={props.onDeleteProduct}
                 onAdjustStockQuick={props.onAdjustStockQuick}
@@ -869,6 +876,7 @@ function AdminPanel(props: {
                 categoryId={props.catalogCategoryId}
                 productId={props.catalogProductId}
                 onPage={props.onCatalogPage}
+                settings={props.settings}
               />
             }
           />

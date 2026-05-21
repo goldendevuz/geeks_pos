@@ -613,6 +613,23 @@ export async function createProduct(body: {
   return j as Product
 }
 
+export async function updateProduct(productId: string, body: {
+  custom_name_uz?: string
+  custom_name_ru?: string
+  custom_name_uz_cyrillic?: string
+}) {
+  const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
+  const r = await fetch(`${API}/api/catalog/products/${productId}/`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+    body: JSON.stringify(body),
+  })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw new AppError(j.code || 'UPDATE_PRODUCT_FAILED', j.detail)
+  return j as Product
+}
+
 export async function deleteProduct(productId: string, hard = true) {
   const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
   const suffix = hard ? '?hard=1' : ''
@@ -1079,6 +1096,9 @@ export type StoreSettings = {
   scanner_suffix: string
   lock_timeout_minutes?: number
   logo_url?: string | null
+  low_stock_threshold?: number
+  show_price_on_labels_default?: boolean
+  show_selling_price_in_catalog?: boolean
 }
 
 export type HardwareConfig = Pick<
@@ -1124,14 +1144,20 @@ export async function updateStoreSettings(data: {
   transliterate_uz: boolean
   receipt_printer_name: string
   receipt_printer_type: 'ESC_POS' | 'TSPL'
+  receipt_printer_port?: string
   label_printer_name: string
   label_printer_type: 'ESC_POS' | 'TSPL'
+  label_printer_port?: string
   receipt_width: '58mm' | '80mm'
   auto_print_on_sale: boolean
+  receipt_lang?: string
   scanner_mode: 'keyboard' | 'serial'
   scanner_prefix: string
   scanner_suffix: string
   lock_timeout_minutes?: number
+  low_stock_threshold?: number
+  show_price_on_labels_default?: boolean
+  show_selling_price_in_catalog?: boolean
   logo?: File | null
 }) {
   const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
@@ -1143,14 +1169,20 @@ export async function updateStoreSettings(data: {
   fd.append('transliterate_uz', data.transliterate_uz ? 'true' : 'false')
   fd.append('receipt_printer_name', data.receipt_printer_name)
   fd.append('receipt_printer_type', data.receipt_printer_type)
+  fd.append('receipt_printer_port', data.receipt_printer_port || '')
   fd.append('label_printer_name', data.label_printer_name)
   fd.append('label_printer_type', data.label_printer_type)
+  fd.append('label_printer_port', data.label_printer_port || '')
   fd.append('receipt_width', data.receipt_width)
   fd.append('auto_print_on_sale', data.auto_print_on_sale ? 'true' : 'false')
+  fd.append('receipt_lang', data.receipt_lang || '')
   fd.append('scanner_mode', data.scanner_mode)
   fd.append('scanner_prefix', data.scanner_prefix)
   fd.append('scanner_suffix', data.scanner_suffix)
   fd.append('lock_timeout_minutes', String(Math.max(1, Number(data.lock_timeout_minutes || 5))))
+  fd.append('low_stock_threshold', String(Math.max(1, Number(data.low_stock_threshold || 3))))
+  fd.append('show_price_on_labels_default', data.show_price_on_labels_default ? 'true' : 'false')
+  fd.append('show_selling_price_in_catalog', data.show_selling_price_in_catalog ? 'true' : 'false')
   if (data.logo) fd.append('logo', data.logo)
   const r = await fetch(`${API}/api/printing/settings/`, {
     method: 'PUT',
@@ -1438,13 +1470,17 @@ export async function adjustInventory(variantId: string, qtyDelta: number, note:
   return r.json() as Promise<{ variant_id: string; stock_qty: number }>
 }
 
-export async function fetchLabelEscpos(variantId: string, size: LabelStickerSize = '40x50', copies = 1) {
+export async function fetchLabelEscpos(variantId: string, size: LabelStickerSize = '40x50', copies = 1, showPrice?: boolean) {
   const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
+  const body: any = { variant_id: variantId, size, copies }
+  if (showPrice !== undefined) {
+    body.show_price = showPrice
+  }
   const r = await fetch(`${API}/api/printing/labels/escpos/`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
-    body: JSON.stringify({ variant_id: variantId, size, copies }),
+    body: JSON.stringify(body),
   })
   if (!r.ok) throw await parseErrorResponse(r, 'LABEL_PRINT_FAILED')
   return (await r.json()) as { raw_base64: string; escpos_base64: string }
@@ -1453,17 +1489,155 @@ export async function fetchLabelEscpos(variantId: string, size: LabelStickerSize
 export async function fetchLabelQueueEscpos(
   items: Array<{ variant_id: string; copies: number }>,
   size: LabelStickerSize = '40x50',
+  showPrice?: boolean,
 ) {
   const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
+  const body: any = { size, items }
+  if (showPrice !== undefined) {
+    body.show_price = showPrice
+  }
   const r = await fetch(`${API}/api/printing/labels/queue/escpos/`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
-    body: JSON.stringify({ size, items }),
+    body: JSON.stringify(body),
   })
   if (!r.ok) throw await parseErrorResponse(r, 'LABEL_QUEUE_FAILED')
   return (await r.json()) as {
     size: LabelStickerSize
     items: Array<{ variant_id: string; barcode: string | null; raw_base64: string; escpos_base64: string }>
   }
+}
+
+// Supplier management API functions
+export type Supplier = {
+  id: string
+  name_uz: string
+  name_ru: string
+  contact_person: string
+  phone: string
+  email: string
+  address: string
+  created_at: string
+}
+
+export type SupplierBalance = {
+  supplier_id: string
+  supplier_name_uz: string
+  supplier_name_ru?: string
+  total_debt: string | number
+  total_paid: string | number
+  balance: string | number
+}
+
+export type SupplierTransaction = {
+  id: string
+  supplier: string
+  supplier_id: string
+  supplier_name_uz: string
+  supplier_name_ru: string
+  type: 'PURCHASE' | 'PAYMENT' | 'RETURN' | 'CREDIT_MEMO'
+  amount: string | number
+  description_uz: string
+  description_ru: string
+  note: string
+  recorded_by: string | null
+  recorded_by_username: string | null
+  created_at: string
+}
+
+export async function fetchSuppliers(): Promise<Supplier[]> {
+  const r = await fetch(`${API}/api/catalog/suppliers/`, { credentials: 'include' })
+  if (!r.ok) throw await parseErrorResponse(r, 'FETCH_SUPPLIERS_FAILED')
+  const j = (await r.json()) as { results?: Supplier[] }
+  return Array.isArray(j.results) ? j.results : []
+}
+
+export async function createSupplier(body: {
+  name_uz: string
+  name_ru: string
+  contact_person: string
+  phone: string
+  email: string
+  address: string
+}): Promise<Supplier> {
+  const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
+  const r = await fetch(`${API}/api/catalog/suppliers/`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+    body: JSON.stringify(body),
+  })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw new AppError(j.code || 'CREATE_SUPPLIER_FAILED', j.detail)
+  return j as Supplier
+}
+
+export async function updateSupplier(
+  supplierId: string,
+  body: {
+    name_uz: string
+    name_ru: string
+    contact_person: string
+    phone: string
+    email: string
+    address: string
+  },
+): Promise<Supplier> {
+  const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
+  const r = await fetch(`${API}/api/catalog/suppliers/${supplierId}/`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+    body: JSON.stringify(body),
+  })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw new AppError(j.code || 'UPDATE_SUPPLIER_FAILED', j.detail)
+  return j as Supplier
+}
+
+export async function deleteSupplier(supplierId: string): Promise<void> {
+  const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
+  const r = await fetch(`${API}/api/catalog/suppliers/${supplierId}/`, {
+    method: 'DELETE',
+    credentials: 'include',
+    headers: { 'X-CSRFToken': csrf },
+  })
+  if (!r.ok) throw await parseErrorResponse(r, 'DELETE_SUPPLIER_FAILED')
+}
+
+export async function fetchSupplierBalance(supplierId: string): Promise<SupplierBalance> {
+  const r = await fetch(`${API}/api/catalog/suppliers/${supplierId}/balance/`, { credentials: 'include' })
+  if (!r.ok) throw await parseErrorResponse(r, 'FETCH_SUPPLIER_BALANCE_FAILED')
+  return (await r.json()) as SupplierBalance
+}
+
+export async function fetchSupplierTransactions(supplierId: string): Promise<SupplierTransaction[]> {
+  const r = await fetch(`${API}/api/catalog/suppliers/${supplierId}/transactions/`, { credentials: 'include' })
+  if (!r.ok) throw await parseErrorResponse(r, 'FETCH_SUPPLIER_TRANSACTIONS_FAILED')
+  const j = (await r.json()) as { results?: SupplierTransaction[] }
+  return Array.isArray(j.results) ? j.results : []
+}
+
+export async function recordSupplierPayment(
+  supplierId: string,
+  amount: number,
+  note: string,
+): Promise<SupplierTransaction> {
+  const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
+  // Determine transaction type based on amount sign:
+  // Negative amount = PAYMENT (reduces debt)
+  // Positive amount = PURCHASE (increases debt)
+  const type = amount < 0 ? 'PAYMENT' : 'PURCHASE'
+  const absoluteAmount = Math.abs(amount)
+  
+  const r = await fetch(`${API}/api/catalog/suppliers/${supplierId}/transactions/`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+    body: JSON.stringify({ type, amount: absoluteAmount, note }),
+  })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw new AppError(j.code || 'TRANSACTION_FAILED', j.detail)
+  return j as SupplierTransaction
 }

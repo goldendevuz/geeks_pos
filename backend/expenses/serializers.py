@@ -8,7 +8,7 @@ class ShopExpenseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ShopExpense
-        fields = ["id", "recorded_at", "amount", "category", "note", "cashier_username", "recorded_by"]
+        fields = ["id", "recorded_at", "amount", "category", "note", "cashier_username", "recorded_by", "related_shift"]
         read_only_fields = ["id", "recorded_at", "cashier_username", "recorded_by"]
 
     def validate_amount(self, value):

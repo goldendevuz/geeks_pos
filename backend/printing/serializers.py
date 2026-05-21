@@ -31,6 +31,9 @@ class StoreSettingsSerializer(serializers.ModelSerializer):
             "scanner_prefix",
             "scanner_suffix",
             "lock_timeout_minutes",
+            "low_stock_threshold",
+            "show_price_on_labels_default",
+            "show_selling_price_in_catalog",
             "updated_at",
         ]
         read_only_fields = ["id", "logo_url", "updated_at"]
@@ -60,6 +63,7 @@ class LabelSingleSerializer(serializers.Serializer):
         default="40x30",
     )
     copies = serializers.IntegerField(min_value=1, max_value=200, required=False, default=1)
+    show_price = serializers.BooleanField(required=False, allow_null=True)
 
 
 class LabelQueueItemSerializer(serializers.Serializer):
@@ -74,6 +78,7 @@ class LabelQueueSerializer(serializers.Serializer):
         default="40x30",
     )
     items = LabelQueueItemSerializer(many=True)
+    show_price = serializers.BooleanField(required=False, allow_null=True)
 
 
 class HardwareConfigSerializer(serializers.ModelSerializer):

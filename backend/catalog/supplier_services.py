@@ -16,12 +16,12 @@ def get_supplier_balance(supplier_id: str) -> dict[str, Decimal]:
         supplier_id: UUID of the supplier
         
     Returns:
-        Dictionary with keys: total_debt, total_credit, balance
-        balance = total_debt - total_credit (positive means debt owed to supplier)
+        Dictionary with keys: total_debt, total_paid, balance
+        balance = total_debt - total_paid (positive means debt owed to supplier)
     """
     supplier = Supplier.objects.filter(id=supplier_id).first()
     if not supplier:
-        return {"total_debt": Decimal("0"), "total_credit": Decimal("0"), "balance": Decimal("0")}
+        return {"total_debt": Decimal("0"), "total_paid": Decimal("0"), "balance": Decimal("0")}
     
     # Calculate debt (purchases and unpaid)
     debt_sum = (
@@ -47,7 +47,7 @@ def get_supplier_balance(supplier_id: str) -> dict[str, Decimal]:
     
     return {
         "total_debt": debt_sum,
-        "total_credit": credit_sum,
+        "total_paid": credit_sum,
         "balance": balance,
     }
 
@@ -69,7 +69,7 @@ def get_all_suppliers_balance() -> list[dict]:
             "supplier_name_uz": supplier.name_uz,
             "supplier_name_ru": supplier.name_ru,
             "total_debt": balance_info["total_debt"],
-            "total_credit": balance_info["total_credit"],
+            "total_paid": balance_info["total_paid"],
             "balance": balance_info["balance"],
         })
     

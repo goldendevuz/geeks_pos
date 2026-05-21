@@ -192,11 +192,10 @@ class SupplierSerializer(serializers.ModelSerializer):
             "id",
             "name_uz",
             "name_ru",
-            "name_uz_cyrillic",
+            "contact_person",
             "phone",
-            "address_uz",
-            "address_ru",
-            "note",
+            "email",
+            "address",
             "is_active",
             "created_at",
             "updated_at",
@@ -206,6 +205,7 @@ class SupplierSerializer(serializers.ModelSerializer):
 class SupplierTransactionSerializer(serializers.ModelSerializer):
     """Track individual supplier transactions for debt/credit."""
     
+    supplier_id = serializers.UUIDField(source="supplier.id", read_only=True)
     supplier_name_uz = serializers.CharField(source="supplier.name_uz", read_only=True)
     supplier_name_ru = serializers.CharField(source="supplier.name_ru", read_only=True)
     recorded_by_username = serializers.CharField(source="recorded_by.username", read_only=True, allow_null=True)
@@ -215,6 +215,7 @@ class SupplierTransactionSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "supplier",
+            "supplier_id",
             "supplier_name_uz",
             "supplier_name_ru",
             "type",
@@ -226,7 +227,7 @@ class SupplierTransactionSerializer(serializers.ModelSerializer):
             "recorded_by_username",
             "created_at",
         ]
-        read_only_fields = ["recorded_by_username"]
+        read_only_fields = ["supplier", "recorded_by", "recorded_by_username", "supplier_id", "supplier_name_uz", "supplier_name_ru", "id", "created_at"]
 
 
 class SupplierBalanceSerializer(serializers.Serializer):
@@ -236,7 +237,7 @@ class SupplierBalanceSerializer(serializers.Serializer):
     supplier_name_uz = serializers.CharField()
     supplier_name_ru = serializers.CharField()
     total_debt = serializers.DecimalField(max_digits=14, decimal_places=2)
-    total_credit = serializers.DecimalField(max_digits=14, decimal_places=2)
+    total_paid = serializers.DecimalField(max_digits=14, decimal_places=2)  # renamed from total_credit
     balance = serializers.DecimalField(max_digits=14, decimal_places=2)  # debt - credit
 
 

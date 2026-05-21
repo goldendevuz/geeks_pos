@@ -175,7 +175,7 @@ export function DashboardPage({
 
       <section className="space-y-3">
         <h3 className="text-lg font-medium">{t('admin.dashboard.snapshotSectionTitle')}</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <KpiCard
             icon={WalletCards}
             label={t('admin.dashboard.openDebts')}
@@ -194,11 +194,6 @@ export function DashboardPage({
             icon={Package}
             label={t('admin.dashboard.inventoryPurchaseValue')}
             value={formatMoney(totals?.inventory_purchase_value)}
-          />
-          <KpiCard
-            icon={BadgeDollarSign}
-            label={t('admin.dashboard.inventorySaleValue')}
-            value={formatMoney(totals?.inventory_sale_value)}
           />
         </div>
       </section>

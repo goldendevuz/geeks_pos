@@ -160,6 +160,7 @@ class LabelEscposView(APIView):
                     "variant": v,
                     "size": ser.validated_data.get("size", "40x30"),
                     "copies": ser.validated_data.get("copies", 1),
+                    "show_price": ser.validated_data.get("show_price"),
                 },
                 settings=settings,
             )
@@ -185,6 +186,7 @@ class LabelQueueEscposView(APIView):
         ser = LabelQueueSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         size = ser.validated_data.get("size", "40x30")
+        show_price = ser.validated_data.get("show_price")
         settings = StoreSettings.get_solo()
         out = []
         requested_ids = [str(item["variant_id"]) for item in ser.validated_data["items"]]
@@ -202,7 +204,7 @@ class LabelQueueEscposView(APIView):
             v = by_id[str(item["variant_id"])]
             try:
                 payload = PrinterFactory.render_label(
-                    label_payload={"variant": v, "size": size, "copies": item["copies"]},
+                    label_payload={"variant": v, "size": size, "copies": item["copies"], "show_price": show_price},
                     settings=settings,
                 )
             except (FileNotFoundError, OSError) as exc:

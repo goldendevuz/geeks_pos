@@ -15,6 +15,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { loadLocale } from '../i18n'
 
 export type Section =
   | 'dashboard'
@@ -63,6 +64,10 @@ export function AdminSidebar({
       ? ITEMS.filter((item) => CASHIER_MENU.includes(item.id))
       : ITEMS
 
+  const handleLanguageChange = async (lang: string) => {
+    await loadLocale(lang)
+  }
+
   return (
     <aside className="fixed inset-y-0 left-0 z-30 w-64 shrink-0 border-r border-slate-800 bg-slate-950 p-3 flex flex-col h-dvh overflow-hidden">
       <div className="text-xs uppercase tracking-wide text-slate-500 px-2 pb-2">{t('admin.sidebar.title')}</div>
@@ -97,7 +102,7 @@ export function AdminSidebar({
                 ? 'bg-emerald-700 border-emerald-500 text-white'
                 : 'bg-slate-800 border-slate-600 text-slate-200'
             }`}
-            onClick={() => i18n.changeLanguage('uz')}
+            onClick={() => void handleLanguageChange('uz')}
           >
             {t('lang.uz')}
           </button>
@@ -108,9 +113,9 @@ export function AdminSidebar({
                 ? 'bg-emerald-700 border-emerald-500 text-white'
                 : 'bg-slate-800 border-slate-600 text-slate-200'
             }`}
-            onClick={() => i18n.changeLanguage('uz-cyrl')}
+            onClick={() => void handleLanguageChange('uz-cyrl')}
           >
-            Ўз
+            {t('lang.uz-cyrl')}
           </button>
           <button
             type="button"
@@ -119,7 +124,7 @@ export function AdminSidebar({
                 ? 'bg-emerald-700 border-emerald-500 text-white'
                 : 'bg-slate-800 border-slate-600 text-slate-200'
             }`}
-            onClick={() => i18n.changeLanguage('ru')}
+            onClick={() => void handleLanguageChange('ru')}
           >
             {t('lang.ru')}
           </button>

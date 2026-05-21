@@ -3,8 +3,10 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.exceptions import ValidationError
 from django.db.models import Q
 from django.utils import timezone
+import logging
 
 from core.audit import log_audit
 from core.permissions import IsAdminOrOwner, IsCashier
@@ -301,7 +303,22 @@ class SupplierTransactionListView(generics.ListCreateAPIView):
     
     def perform_create(self, serializer):
         supplier_id = self.kwargs.get("supplier_id")
-        serializer.save(recorded_by=self.request.user)
+        try:
+            supplier = Supplier.objects.get(id=supplier_id)
+            serializer.save(supplier=supplier, recorded_by=self.request.user)
+        except Supplier.DoesNotExist:
+            raise ValidationError({"detail": f"Supplier with ID {supplier_id} not found"})
+    
+    def create(self, request, *args, **kwargs):
+        """Override to provide better error messages."""
+        try:
+            return super().create(request, *args, **kwargs)
+        except ValidationError as e:
+            return Response({"code": "VALIDATION_ERROR", "detail": str(e)}, status=400)
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error creating supplier transaction: {e}")
+            return Response({"code": "TRANSACTION_ERROR", "detail": str(e)}, status=400)
 
 
 class SupplierBalanceView(APIView):
