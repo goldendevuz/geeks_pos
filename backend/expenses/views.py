@@ -2,7 +2,7 @@ from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 
 from accounts.models import Role, UserProfile
-from core.permissions import IsCashier
+from core.permissions import IsAdminOrOwner, IsCashier
 
 from .models import ShopExpense
 from .serializers import ShopExpenseSerializer
@@ -35,3 +35,18 @@ class ShopExpenseListCreateView(generics.ListCreateAPIView):
         if to_date:
             qs = qs.filter(recorded_at__date__lte=to_date)
         return qs.order_by("-recorded_at")
+
+
+class ShopExpenseDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Admin/owner: edit or delete any expense row."""
+
+    serializer_class = ShopExpenseSerializer
+    lookup_field = "pk"
+
+    def get_queryset(self):
+        return ShopExpense.objects.select_related("recorded_by").all()
+
+    def get_permissions(self):
+        if self.request.method in ("GET", "HEAD", "OPTIONS"):
+            return [IsAuthenticated(), IsCashier()]
+        return [IsAuthenticated(), IsAdminOrOwner()]

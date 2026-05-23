@@ -11,6 +11,10 @@ class ShopExpenseSerializer(serializers.ModelSerializer):
         fields = ["id", "recorded_at", "amount", "category", "note", "cashier_username", "recorded_by"]
         read_only_fields = ["id", "recorded_at", "cashier_username", "recorded_by"]
 
+    def update(self, instance, validated_data):
+        validated_data.pop("recorded_by", None)
+        return super().update(instance, validated_data)
+
     def validate_amount(self, value):
         if value is None or value <= 0:
             raise serializers.ValidationError("amount must be positive.")

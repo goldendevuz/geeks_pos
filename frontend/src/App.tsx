@@ -920,7 +920,10 @@ function AdminPanel(props: {
           <Route path="stock" element={<CashStockPage role={props.role} />} />
           <Route path="printer" element={isCashier ? <Navigate to="/admin/sales" replace /> : <Navigate to="/admin/settings" replace />} />
           <Route path="shift" element={<ShiftXReportPage />} />
-          <Route path="expenses" element={<ExpensesPage />} />
+          <Route
+            path="expenses"
+            element={<ExpensesPage isManager={props.role === 'ADMIN' || props.role === 'OWNER'} />}
+          />
           <Route path="returns" element={<ReturnSalePage />} />
           <Route
             path="sales"

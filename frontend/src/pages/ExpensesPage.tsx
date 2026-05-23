@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ExpenseCategory, ShopExpenseRow } from '../api'
-import { createShopExpense, fetchShopExpenses } from '../api'
+import { createShopExpense, deleteShopExpense, fetchShopExpenses, updateShopExpense } from '../api'
 import { formatMoney } from '../utils/money'
 import { ActionToast } from '../components/ActionToast'
 import { requestAdminDataRefresh } from '../utils/adminDataRefresh'
 
 const CATEGORY_OPTIONS: ExpenseCategory[] = ['RENT', 'UTILITIES', 'SUPPLIES', 'SALARY', 'OTHER']
 
-export function ExpensesPage() {
+type EditDraft = { amount: string; category: ExpenseCategory; note: string }
+
+export function ExpensesPage({ isManager = false }: { isManager?: boolean }) {
   const { t } = useTranslation()
   const [rows, setRows] = useState<ShopExpenseRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -17,6 +19,9 @@ export function ExpensesPage() {
   const [amount, setAmount] = useState('')
   const [category, setCategory] = useState<ExpenseCategory>('OTHER')
   const [note, setNote] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
   const [toast, setToast] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null)
 
   async function load() {
@@ -34,6 +39,20 @@ export function ExpensesPage() {
   useEffect(() => {
     void load()
   }, [from, to])
+
+  function startEdit(row: ShopExpenseRow) {
+    setEditingId(row.id)
+    setEditDraft({
+      amount: String(Math.round(parseFloat(row.amount) || 0)),
+      category: row.category,
+      note: row.note || '',
+    })
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    setEditDraft(null)
+  }
 
   return (
     <div className="p-4 space-y-6 max-w-4xl">
@@ -120,18 +139,130 @@ export function ExpensesPage() {
                 <th className="text-left p-2">{t('admin.expenses.category')}</th>
                 <th className="text-left p-2">{t('admin.expenses.note')}</th>
                 <th className="text-left p-2">{t('admin.expenses.cashier')}</th>
+                {isManager && <th className="text-right p-2">{t('admin.common.actions')}</th>}
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <tr key={r.id} className="border-t border-slate-800">
-                  <td className="p-2 whitespace-nowrap">{new Date(r.recorded_at).toLocaleString()}</td>
-                  <td className="p-2 text-right tabular-nums">{formatMoney(r.amount)}</td>
-                  <td className="p-2">{t(`admin.expenses.cat.${r.category}`)}</td>
-                  <td className="p-2 max-w-[12rem] truncate">{r.note || '—'}</td>
-                  <td className="p-2 text-slate-400">{r.cashier_username ?? '—'}</td>
-                </tr>
-              ))}
+              {rows.map((r) => {
+                const editing = editingId === r.id && editDraft
+                return (
+                  <tr key={r.id} className="border-t border-slate-800">
+                    <td className="p-2 whitespace-nowrap">{new Date(r.recorded_at).toLocaleString()}</td>
+                    {editing ? (
+                      <>
+                        <td className="p-2">
+                          <input
+                            type="number"
+                            min={1}
+                            className="touch-btn min-h-10 w-28 px-2 rounded-lg bg-slate-950 border border-slate-600"
+                            value={editDraft.amount}
+                            onChange={(e) => setEditDraft({ ...editDraft, amount: e.target.value })}
+                          />
+                        </td>
+                        <td className="p-2">
+                          <select
+                            className="touch-btn min-h-10 px-2 rounded-lg bg-slate-950 border border-slate-600"
+                            value={editDraft.category}
+                            onChange={(e) =>
+                              setEditDraft({ ...editDraft, category: e.target.value as ExpenseCategory })
+                            }
+                          >
+                            {CATEGORY_OPTIONS.map((c) => (
+                              <option key={c} value={c}>
+                                {t(`admin.expenses.cat.${c}`)}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-2">
+                          <input
+                            className="touch-btn min-h-10 w-full min-w-[8rem] px-2 rounded-lg bg-slate-950 border border-slate-600"
+                            value={editDraft.note}
+                            onChange={(e) => setEditDraft({ ...editDraft, note: e.target.value })}
+                          />
+                        </td>
+                        <td className="p-2 text-slate-400">{r.cashier_username ?? '—'}</td>
+                        {isManager && (
+                          <td className="p-2 text-right whitespace-nowrap space-x-2">
+                            <button
+                              type="button"
+                              disabled={busyId === r.id || !editDraft.amount.trim() || Number(editDraft.amount) <= 0}
+                              className="touch-btn px-3 py-2 rounded-lg bg-emerald-800 border border-emerald-600 text-xs disabled:opacity-40"
+                              onClick={async () => {
+                                setBusyId(r.id)
+                                try {
+                                  await updateShopExpense(r.id, {
+                                    amount: Number(editDraft.amount).toFixed(0),
+                                    category: editDraft.category,
+                                    note: editDraft.note.trim(),
+                                  })
+                                  cancelEdit()
+                                  setToast({ kind: 'ok', msg: t('admin.expenses.updated') })
+                                  void load()
+                                  requestAdminDataRefresh('shop-expense')
+                                } catch {
+                                  setToast({ kind: 'err', msg: t('admin.expenses.updateFail') })
+                                } finally {
+                                  setBusyId(null)
+                                }
+                              }}
+                            >
+                              {t('admin.common.save')}
+                            </button>
+                            <button
+                              type="button"
+                              className="touch-btn px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-xs"
+                              onClick={cancelEdit}
+                            >
+                              {t('admin.common.cancel')}
+                            </button>
+                          </td>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <td className="p-2 text-right tabular-nums">{formatMoney(r.amount)}</td>
+                        <td className="p-2">{t(`admin.expenses.cat.${r.category}`)}</td>
+                        <td className="p-2 max-w-[12rem] truncate">{r.note || '—'}</td>
+                        <td className="p-2 text-slate-400">{r.cashier_username ?? '—'}</td>
+                        {isManager && (
+                          <td className="p-2 text-right whitespace-nowrap space-x-2">
+                            <button
+                              type="button"
+                              className="touch-btn px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-xs"
+                              onClick={() => startEdit(r)}
+                            >
+                              {t('admin.common.edit')}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busyId === r.id}
+                              className="touch-btn px-3 py-2 rounded-lg bg-red-900/80 border border-red-700 text-xs disabled:opacity-40"
+                              onClick={async () => {
+                                if (!window.confirm(t('admin.expenses.deleteConfirm'))) return
+                                setBusyId(r.id)
+                                try {
+                                  await deleteShopExpense(r.id)
+                                  if (editingId === r.id) cancelEdit()
+                                  setToast({ kind: 'ok', msg: t('admin.expenses.deleted') })
+                                  void load()
+                                  requestAdminDataRefresh('shop-expense')
+                                } catch {
+                                  setToast({ kind: 'err', msg: t('admin.expenses.deleteFail') })
+                                } finally {
+                                  setBusyId(null)
+                                }
+                              }}
+                            >
+                              {t('admin.common.delete')}
+                            </button>
+                          </td>
+                        )}
+                      </>
+                    )}
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

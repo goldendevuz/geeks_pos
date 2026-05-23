@@ -114,8 +114,8 @@ export function PosPage({
   /** Bumps after each successful sale so identical cart contents still get a new idempotency key. */
   const idempotencyGenRef = useRef(0)
   const lastScanRef = useRef<{ code: string; at: number } | null>(null)
-  /** Blocks immediate re-add of same barcode until a different sku is scanned. */
-  const scanDupBlockRef = useRef<string | null>(null)
+  /** Keyboard-wedge buffer when focus is not on the scan field (e.g. after tapping cart). */
+  const scanCaptureRef = useRef('')
   const [buffer, setBuffer] = useState('')
   const [toast, setToast] = useState<{ kind: 'err' | 'ok'; msg: string; muteSound?: boolean } | null>(null)
   const [banner, setBanner] = useState<string | null>(null)
@@ -230,28 +230,28 @@ export function PosPage({
     })()
   }, [])
 
-  const shouldKeepCurrentFocus = useCallback(() => {
-    const el = document.activeElement as HTMLElement | null
+  const isPosTypingTarget = useCallback((target: EventTarget | null) => {
+    const el = target as HTMLElement | null
     if (!el) return false
-    const tag = el.tagName.toUpperCase()
-    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return true
-    return el.isContentEditable
+    if (el.id === 'posScanInput') return false
+    return Boolean(el.closest('[data-pos-typing]'))
   }, [])
+
+  const shouldKeepCurrentFocus = useCallback(
+    () => isPosTypingTarget(document.activeElement),
+    [isPosTypingTarget],
+  )
+
+  const focusScanInput = useCallback(() => {
+    if (locked || numpadCtx || selectedLine || stockMatrix) return
+    requestAnimationFrame(() => scanRef.current?.focus())
+  }, [locked, numpadCtx, selectedLine, stockMatrix])
 
   const safeRefocus = useCallback(() => {
     if (locked || numpadCtx || selectedLine || stockMatrix) return
     if (shouldKeepCurrentFocus()) return
-    requestAnimationFrame(() => {
-      if (document.activeElement !== scanRef.current) {
-        scanRef.current?.focus()
-      }
-    })
-    window.setTimeout(() => {
-      if (document.activeElement !== scanRef.current) {
-        scanRef.current?.focus()
-      }
-    }, 50)
-  }, [locked, numpadCtx, selectedLine, shouldKeepCurrentFocus, stockMatrix])
+    focusScanInput()
+  }, [locked, numpadCtx, selectedLine, shouldKeepCurrentFocus, stockMatrix, focusScanInput])
 
   function scanFieldPending(): boolean {
     const dom = (scanRef.current?.value || '').trim()
@@ -468,6 +468,8 @@ export function PosPage({
   function openNewCart(toastMsg?: string) {
     clearCart()
     resetCheckoutState()
+    lastScanRef.current = null
+    scanCaptureRef.current = ''
     if (toastMsg) showToast('ok', toastMsg)
     safeRefocus()
   }
@@ -550,49 +552,45 @@ export function PosPage({
     if (afterScanFocus === 'qty') {
       pendingQtyFocus.current = true
     } else {
-      safeRefocus()
+      focusScanInput()
     }
   }
 
-  async function handleScanSubmit(code: string) {
-    const c = code.trim()
-    if (!c) return
-    if (scanDupBlockRef.current && scanDupBlockRef.current !== c) {
-      scanDupBlockRef.current = null
-    }
-    if (scanDupBlockRef.current && scanDupBlockRef.current === c) {
-      showToast('err', t('msg.scanDuplicate'))
-      setBuffer('')
-      safeRefocus()
-      return
-    }
-    const now = Date.now()
-    const prev = lastScanRef.current
-    if (prev && prev.code === c && now - prev.at < SCAN_DEBOUNCE_MS) {
-      setBuffer('')
-      safeRefocus()
-      return
-    }
-    lastScanRef.current = { code: c, at: now }
-    try {
-      const v = await fetchVariantByBarcode(c)
-      setBuffer('')
-      addVariantToCart(v)
-      scanDupBlockRef.current = c
-    } catch (e: unknown) {
-      beepError()
-      setScanFlash(true)
-      setTimeout(() => setScanFlash(false), 400)
-      const code = (e as Error & { code?: string }).code
-      const msg =
-        code === 'BARCODE_NOT_FOUND'
-          ? `${t('msg.scanNotFound')}: ${c}`
-          : t(`err.${code || 'API_ERROR'}`, { defaultValue: t('msg.scanApi') })
-      showToast('err', msg)
-      setBuffer('')
-      safeRefocus()
-    }
-  }
+  const handleScanSubmit = useCallback(
+    async (code: string) => {
+      const c = code.trim()
+      if (!c) return
+      const now = Date.now()
+      const prev = lastScanRef.current
+      if (prev && prev.code === c && now - prev.at < SCAN_DEBOUNCE_MS) {
+        setBuffer('')
+        focusScanInput()
+        return
+      }
+      lastScanRef.current = { code: c, at: now }
+      try {
+        const v = await fetchVariantByBarcode(c)
+        setBuffer('')
+        scanCaptureRef.current = ''
+        addVariantToCart(v)
+        focusScanInput()
+      } catch (e: unknown) {
+        beepError()
+        setScanFlash(true)
+        setTimeout(() => setScanFlash(false), 400)
+        const errCode = (e as Error & { code?: string }).code
+        const msg =
+          errCode === 'BARCODE_NOT_FOUND'
+            ? `${t('msg.scanNotFound')}: ${c}`
+            : t(`err.${errCode || 'API_ERROR'}`, { defaultValue: t('msg.scanApi') })
+        showToast('err', msg)
+        setBuffer('')
+        scanCaptureRef.current = ''
+        focusScanInput()
+      }
+    },
+    [addVariantToCart, focusScanInput, showToast, t],
+  )
 
   async function doComplete() {
     if (completing || completeInFlightRef.current || cart.length === 0) return
@@ -812,10 +810,41 @@ export function PosPage({
 
   useEffect(() => {
     if (locked) return
+    function flushCaptureBuffer(terminator: string) {
+      const raw = scanCaptureRef.current
+      scanCaptureRef.current = ''
+      if (!raw.trim()) return
+      const normalized = normalizeScanValue(raw, scannerPrefix, scannerSuffix || terminator)
+      if (normalized) void handleScanSubmit(normalized)
+    }
+    function onCaptureKeyDown(e: KeyboardEvent) {
+      if (isPosTypingTarget(e.target)) return
+      const el = e.target as HTMLElement | null
+      if (el?.id === 'posScanInput') return
+      if (e.ctrlKey || e.altKey || e.metaKey) return
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        if (scanCaptureRef.current.trim()) {
+          flushCaptureBuffer(e.key === 'Tab' ? '\t' : '\n')
+          e.preventDefault()
+          e.stopImmediatePropagation()
+        }
+        return
+      }
+      if (e.key.length === 1) {
+        scanCaptureRef.current += e.key
+        e.preventDefault()
+      }
+    }
+    window.addEventListener('keydown', onCaptureKeyDown, true)
+    return () => window.removeEventListener('keydown', onCaptureKeyDown, true)
+  }, [handleScanSubmit, isPosTypingTarget, locked, scannerPrefix, scannerSuffix])
+
+  useEffect(() => {
+    if (locked) return
     const onPointerDown = (e: PointerEvent) => {
       const target = e.target as HTMLElement | null
-      if (target?.closest('input,select,textarea,button,[role="dialog"]')) return
-      safeRefocus()
+      if (target?.closest('[data-pos-typing], [role="dialog"]')) return
+      focusScanInput()
     }
     const onFocus = () => safeRefocus()
     window.addEventListener('pointerdown', onPointerDown, { passive: true })
@@ -829,7 +858,7 @@ export function PosPage({
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [locked, safeRefocus])
+  }, [focusScanInput, locked])
 
   function onScanChange(e: React.ChangeEvent<HTMLInputElement>) {
     const v = e.target.value
@@ -1059,7 +1088,8 @@ export function PosPage({
           />
           <p className="text-xs text-slate-500">{t('scan.hint')}</p>
 
-          <label className="text-xs text-slate-400 mt-3 block" htmlFor="posProductSearch">
+          <div data-pos-typing className="mt-3">
+          <label className="text-xs text-slate-400 block" htmlFor="posProductSearch">
             {t('pos.searchLabel')}
           </label>
           <input
@@ -1108,6 +1138,7 @@ export function PosPage({
               ))}
             </ul>
           )}
+          </div>
 
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
             <span>{t('pos.focusAfterScan')}:</span>
@@ -1337,7 +1368,7 @@ export function PosPage({
           </div>
 
           {paymentRows.some((p) => p.method === 'DEBT' && parseSom(p.amount).gt(0)) && (
-            <div className="rounded border border-slate-800 p-3 bg-slate-900 space-y-2">
+            <div data-pos-typing className="rounded border border-slate-800 p-3 bg-slate-900 space-y-2">
               <div className="text-sm text-slate-400">{t('pay.customer')}</div>
               <input
                 className="touch-btn w-full min-h-12 px-3 rounded-xl bg-slate-950 border border-slate-700 text-sm"

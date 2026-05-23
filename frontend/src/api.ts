@@ -1027,6 +1027,35 @@ export async function createShopExpense(payload: {
   return j as ShopExpenseRow
 }
 
+export async function updateShopExpense(
+  id: string,
+  payload: { amount: string; category: ExpenseCategory; note?: string },
+): Promise<ShopExpenseRow> {
+  const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
+  const r = await fetch(`${API}/api/expenses/${id}/`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+    body: JSON.stringify(payload),
+  })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw new AppError(j.code || 'UPDATE_EXPENSE_FAILED', j.detail)
+  return j as ShopExpenseRow
+}
+
+export async function deleteShopExpense(id: string): Promise<void> {
+  const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
+  const r = await fetch(`${API}/api/expenses/${id}/`, {
+    method: 'DELETE',
+    credentials: 'include',
+    headers: { 'X-CSRFToken': csrf },
+  })
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}))
+    throw new AppError(j.code || 'DELETE_EXPENSE_FAILED', j.detail)
+  }
+}
+
 export async function exportSalesXlsx(params?: { from?: string; to?: string }) {
   const q = new URLSearchParams()
   if (params?.from) q.set('from', params.from)
