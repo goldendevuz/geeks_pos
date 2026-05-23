@@ -31,9 +31,32 @@ class StoreSettingsSerializer(serializers.ModelSerializer):
             "scanner_prefix",
             "scanner_suffix",
             "lock_timeout_minutes",
+            "shop_mode",
+            "setup_completed",
+            "default_clothing_gender",
             "updated_at",
         ]
-        read_only_fields = ["id", "logo_url", "updated_at"]
+        read_only_fields = ["id", "logo_url", "setup_completed", "updated_at"]
+
+    def validate_shop_mode(self, value):
+        v = (value or "").strip()
+        if not v:
+            return ""
+        valid = {c[0] for c in StoreSettings.ShopMode.choices}
+        if v not in valid:
+            raise serializers.ValidationError(f"shop_mode must be one of: {', '.join(sorted(valid))}")
+        return v
+
+    def validate_default_clothing_gender(self, value):
+        v = (value or "").strip()
+        if not v:
+            return ""
+        valid = {c[0] for c in StoreSettings.ClothingGender.choices}
+        if v not in valid:
+            raise serializers.ValidationError(
+                f"default_clothing_gender must be one of: {', '.join(sorted(valid))} or empty"
+            )
+        return v
 
     def validate_receipt_lang(self, value):
         v = (value or "").strip().lower()

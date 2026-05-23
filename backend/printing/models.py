@@ -8,6 +8,15 @@ class StoreSettings(models.Model):
         ESC_POS = "ESC_POS", "ESC/POS"
         TSPL = "TSPL", "TSPL"
 
+    class ShopMode(models.TextChoices):
+        FOOTWEAR_ONLY = "FOOTWEAR_ONLY", "Footwear only"
+        CLOTHING_ONLY = "CLOTHING_ONLY", "Clothing only"
+        MIXED = "MIXED", "Mixed"
+
+    class ClothingGender(models.TextChoices):
+        MALE = "MALE", "Male"
+        FEMALE = "FEMALE", "Female"
+
     """Singleton-style store metadata for receipt header."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -44,6 +53,20 @@ class StoreSettings(models.Model):
     scanner_prefix = models.CharField(max_length=16, blank=True, default="")
     scanner_suffix = models.CharField(max_length=16, blank=True, default="\t")
     lock_timeout_minutes = models.PositiveSmallIntegerField(default=5)
+
+    shop_mode = models.CharField(
+        max_length=32,
+        choices=ShopMode.choices,
+        blank=True,
+        default="",
+    )
+    setup_completed = models.BooleanField(default=False)
+    default_clothing_gender = models.CharField(
+        max_length=16,
+        choices=ClothingGender.choices,
+        blank=True,
+        default="",
+    )
 
     updated_at = models.DateTimeField(auto_now=True)
 

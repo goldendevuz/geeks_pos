@@ -1,6 +1,7 @@
 from django.urls import include, path
 
 urlpatterns = [
+    path("setup/", include("setup.urls")),
     path("", include("core.urls")),
     path("auth/", include("accounts.urls")),
     path("catalog/", include("catalog.urls")),

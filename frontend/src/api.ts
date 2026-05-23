@@ -456,11 +456,19 @@ export async function activateLicense(hardware_id: string, activation_key: strin
 }
 
 export type Category = { id: string; name_uz: string; name_ru: string }
+export type ShopMode = 'FOOTWEAR_ONLY' | 'CLOTHING_ONLY' | 'MIXED'
+export type ProductKind = 'FOOTWEAR' | 'CLOTHING'
+export type ClothingGender = 'MALE' | 'FEMALE' | 'UNISEX'
+export type AgeBand = 'children' | 'teen' | 'adult'
+
 export type Product = {
   id: string
   category: string
   name_uz: string
   name_ru: string
+  kind?: ProductKind
+  gender?: ClothingGender | ''
+  age_band?: AgeBand
   is_active: boolean
   deleted_at: string | null
 }
@@ -523,7 +531,16 @@ export type CashierXReport = {
   range: { from: string; to: string }
 }
 
-export type Size = { id: string; value: string; label_uz: string; label_ru?: string }
+export type Size = {
+  id: string
+  value: string
+  label_uz: string
+  label_ru?: string
+  sort_order?: number
+  kind?: ProductKind | ''
+  age_band?: AgeBand | ''
+  gender?: ClothingGender | ''
+}
 export type Color = { id: string; value: string; label_uz: string; label_ru?: string }
 export type Paginated<T> = {
   count: number
@@ -604,11 +621,39 @@ export async function fetchProducts(params?: {
   return toPaginated<Product>(await r.json())
 }
 
+export type SetupStatus = {
+  setup_completed: boolean
+  shop_mode: ShopMode | null
+  default_clothing_gender: ClothingGender | null
+}
+
+export async function fetchSetupStatus(): Promise<SetupStatus> {
+  const r = await fetch(`${API}/api/setup/status/`, { credentials: 'include' })
+  if (!r.ok) throw new Error('FETCH_SETUP_STATUS_FAILED')
+  return r.json()
+}
+
+export async function completeSetup(shop_mode: ShopMode): Promise<SetupStatus> {
+  const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
+  const r = await fetch(`${API}/api/setup/complete/`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+    body: JSON.stringify({ shop_mode }),
+  })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw new AppError(j.code || 'SETUP_COMPLETE_FAILED', j.detail)
+  return j as SetupStatus
+}
+
 export async function createProduct(body: {
   category: string
   name_uz: string
   name_ru: string
   is_active?: boolean
+  kind?: ProductKind
+  gender?: ClothingGender | ''
+  age_band?: AgeBand
 }) {
   const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
   const r = await fetch(`${API}/api/catalog/products/`, {
@@ -685,6 +730,9 @@ export async function createSize(body: {
   label_uz: string
   label_ru: string
   sort_order?: number
+  kind?: ProductKind
+  age_band?: AgeBand
+  gender?: ClothingGender | ''
 }) {
   const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
   const r = await fetch(`${API}/api/catalog/sizes/`, {
@@ -1241,6 +1289,9 @@ export type StoreSettings = {
   scanner_suffix: string
   lock_timeout_minutes?: number
   logo_url?: string | null
+  shop_mode?: ShopMode | ''
+  setup_completed?: boolean
+  default_clothing_gender?: ClothingGender | ''
 }
 
 export type HardwareConfig = Pick<
@@ -1294,6 +1345,8 @@ export async function updateStoreSettings(data: {
   scanner_prefix: string
   scanner_suffix: string
   lock_timeout_minutes?: number
+  shop_mode?: ShopMode
+  default_clothing_gender?: ClothingGender | ''
   logo?: File | null
 }) {
   const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
@@ -1313,6 +1366,10 @@ export async function updateStoreSettings(data: {
   fd.append('scanner_prefix', data.scanner_prefix)
   fd.append('scanner_suffix', data.scanner_suffix)
   fd.append('lock_timeout_minutes', String(Math.max(1, Number(data.lock_timeout_minutes || 5))))
+  if (data.shop_mode) fd.append('shop_mode', data.shop_mode)
+  if (data.default_clothing_gender !== undefined) {
+    fd.append('default_clothing_gender', data.default_clothing_gender || '')
+  }
   if (data.logo) fd.append('logo', data.logo)
   const r = await fetch(`${API}/api/printing/settings/`, {
     method: 'PUT',

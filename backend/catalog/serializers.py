@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
-from .models import Category, Color, Product, ProductVariant, Size
+from .models import Category, Color, Product, ProductKind, ProductVariant, Size
+from .product_validation import apply_product_kind_defaults
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -12,7 +13,22 @@ class CategorySerializer(serializers.ModelSerializer):
 class SizeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Size
-        fields = ["id", "value", "label_uz", "label_ru", "sort_order"]
+        fields = [
+            "id",
+            "value",
+            "label_uz",
+            "label_ru",
+            "sort_order",
+            "kind",
+            "age_band",
+            "gender",
+        ]
+
+    def validate(self, attrs):
+        kind = (attrs.get("kind") or getattr(self.instance, "kind", "") or "").strip()
+        if kind and kind not in {c[0] for c in ProductKind.choices}:
+            raise serializers.ValidationError({"kind": "Invalid kind."})
+        return attrs
 
 
 class ColorSerializer(serializers.ModelSerializer):
@@ -29,9 +45,15 @@ class ProductSerializer(serializers.ModelSerializer):
             "category",
             "name_uz",
             "name_ru",
+            "kind",
+            "gender",
+            "age_band",
             "is_active",
             "deleted_at",
         ]
+
+    def validate(self, attrs):
+        return apply_product_kind_defaults(attrs, instance=self.instance)
 
 
 class ProductVariantSerializer(serializers.ModelSerializer):

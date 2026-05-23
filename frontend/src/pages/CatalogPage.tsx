@@ -1,6 +1,30 @@
 import { useEffect, useMemo, useState } from 'react'
 import { List, type RowComponentProps } from 'react-window'
-import type { BulkGridCell, Category, Color, LabelStickerSize, Product, Size, Variant } from '../api'
+import type {
+  BulkGridCell,
+  Category,
+  ClothingGender,
+  Color,
+  LabelStickerSize,
+  Product,
+  ProductKind,
+  ShopMode,
+  Size,
+  Variant,
+} from '../api'
+import {
+  buildWizardSteps,
+  resolveClothingGender,
+  resolveProductKind,
+  type WizardStepId,
+} from '../catalog/wizardFlow'
+import {
+  clothingSizeValues,
+  filterMatrixSizes,
+  footwearSizeValues,
+  sizeSortOrder,
+  type SizeLinePreset,
+} from '../catalog/sizePresets'
 import { fetchVariants } from '../api'
 import { useTranslation } from 'react-i18next'
 import { formatMoney } from '../utils/money'
@@ -38,14 +62,6 @@ const LABEL_SIZE_STORAGE_KEY = 'geeks_pos_catalog_label_size'
 const DEFAULT_LABEL_SIZE: LabelStickerSize = '40x30'
 const LOW_STOCK_THRESHOLD = 3
 
-type SizeLinePreset = 'children' | 'teen' | 'adult'
-
-const SIZE_LINE_RANGES: Record<SizeLinePreset, { min: number; max: number }> = {
-  children: { min: 31, max: 36 },
-  teen: { min: 36, max: 41 },
-  adult: { min: 40, max: 45 },
-}
-
 function normalizeSavedLabelSize(raw: string | null): LabelStickerSize {
   const v = (raw || '').trim()
   if (v === '40x30' || v === '40x50' || v === '50x40' || v === '58mm') return v
@@ -64,6 +80,8 @@ type WizardVariantForm = {
 type MatrixField = 'purchase' | 'list' | 'qty'
 
 export function CatalogPage({
+  shopMode = 'FOOTWEAR_ONLY',
+  defaultClothingGender = '',
   categories,
   products,
   sizes,
@@ -93,6 +111,8 @@ export function CatalogPage({
   productId,
   onFacetsChange,
 }: {
+  shopMode?: ShopMode
+  defaultClothingGender?: ClothingGender | ''
   categories: Category[]
   products: Product[]
   sizes: Size[]
@@ -104,8 +124,23 @@ export function CatalogPage({
   page: number
   onCreateVariantBulk: (payload: { product_id: string; matrix: BulkGridCell[] }) => Promise<Variant[]>
   onCreateCategory: (payload: { name_uz: string; name_ru: string }) => Promise<void>
-  onCreateProduct: (payload: { category: string; name_uz: string; name_ru: string }) => Promise<void>
-  onCreateSize: (payload: { value: string; label_uz: string; label_ru: string; sort_order?: number }) => Promise<void>
+  onCreateProduct: (payload: {
+    category: string
+    name_uz: string
+    name_ru: string
+    kind?: ProductKind
+    gender?: ClothingGender | ''
+    age_band?: SizeLinePreset
+  }) => Promise<void>
+  onCreateSize: (payload: {
+    value: string
+    label_uz: string
+    label_ru: string
+    sort_order?: number
+    kind?: ProductKind
+    age_band?: SizeLinePreset
+    gender?: ClothingGender | ''
+  }) => Promise<void>
   onCreateColor: (payload: { value: string; label_uz: string; label_ru: string; sort_order?: number }) => Promise<void>
   onDeleteCategory: (categoryId: string) => Promise<void>
   onDeleteProduct: (productId: string) => Promise<void>
@@ -168,7 +203,9 @@ export function CatalogPage({
     }
   })
   const [queueMap, setQueueMap] = useState<Record<string, number>>({})
-  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1)
+  const [wizardStepIndex, setWizardStepIndex] = useState(0)
+  const [wizardKind, setWizardKind] = useState<ProductKind | null>(null)
+  const [wizardGender, setWizardGender] = useState<ClothingGender | null>(null)
   const [matrixCells, setMatrixCells] = useState<Record<string, { purchase: string; list: string; qty: string }>>({})
   const [defaultQty, setDefaultQty] = useState('0')
   const [defaultPurchase, setDefaultPurchase] = useState('0')
@@ -186,15 +223,31 @@ export function CatalogPage({
   const [wizardOpen, setWizardOpen] = useState(false)
   const [sizeLinePreset, setSizeLinePreset] = useState<SizeLinePreset>('adult')
 
-  const shoeSizes = useMemo(() => {
-    const range = SIZE_LINE_RANGES[sizeLinePreset]
-    return sizes
-      .filter((s) => {
-        const n = Number(s.value)
-        return Number.isFinite(n) && n >= range.min && n <= range.max
-      })
-      .sort((a, b) => Number(a.value) - Number(b.value))
-  }, [sizes, sizeLinePreset])
+  const needsGenderStep =
+    (shopMode === 'CLOTHING_ONLY' || shopMode === 'MIXED') && !(defaultClothingGender || '').trim()
+  const wizardSteps = useMemo(
+    () => buildWizardSteps(shopMode, wizardKind, needsGenderStep),
+    [shopMode, wizardKind, needsGenderStep],
+  )
+  const currentWizardStep: WizardStepId = wizardSteps[wizardStepIndex] ?? 'brand'
+  const productKind = resolveProductKind(shopMode, wizardKind)
+  const clothingGender = resolveClothingGender(
+    sizeLinePreset,
+    defaultClothingGender,
+    wizardGender,
+  )
+
+  const matrixSizes = useMemo(
+    () =>
+      filterMatrixSizes(sizes, {
+        productKind,
+        ageBand: sizeLinePreset,
+        gender: clothingGender,
+      }),
+    [sizes, productKind, sizeLinePreset, clothingGender],
+  )
+
+  const isClothingMode = productKind === 'CLOTHING'
 
   const productStockTotals = useMemo(() => {
     const totals: Record<string, number> = {}
@@ -246,22 +299,22 @@ export function CatalogPage({
   }, [queueSize])
 
   useEffect(() => {
-    if (wizardStep !== 3) return
+    if (currentWizardStep !== 'matrix') return
     setMatrixCells((prev) => {
       const next = { ...prev }
-      for (const s of shoeSizes) {
+      for (const s of matrixSizes) {
         if (!next[s.id]) next[s.id] = { purchase: '0', list: '0', qty: '0' }
       }
       return next
     })
-  }, [wizardStep, shoeSizes])
+  }, [currentWizardStep, matrixSizes])
 
   useEffect(() => {
-    if (wizardStep !== 2) return
+    if (currentWizardStep !== 'color') return
     if (form.color) return
     if (orderedColors.length === 0) return
     setForm((prev) => ({ ...prev, color: orderedColors[0].id }))
-  }, [wizardStep, form.color, orderedColors])
+  }, [currentWizardStep, form.color, orderedColors])
 
   function colorChipLabel(c: Color) {
     const key = `catalog.colors.standard.${c.value}`
@@ -298,7 +351,7 @@ export function CatalogPage({
     const nextRaw = digitsOnly(rawValue) || '0'
     setMatrixCells((prev) => {
       const next = { ...prev }
-      for (const s of shoeSizes) {
+      for (const s of matrixSizes) {
         const base = next[s.id] || { purchase: '0', list: '0', qty: '0' }
         next[s.id] = { ...base, [field]: nextRaw }
       }
@@ -354,12 +407,12 @@ export function CatalogPage({
   async function submitBulkVariant() {
     const productId = selectedModel || form.product
     if (!productId || !form.color) return
-    if (shoeSizes.length === 0) {
-      setToast(t('admin.catalog.wizard.needShoeSizes'))
+    if (matrixSizes.length === 0) {
+      setToast(t('admin.catalog.wizard.needMatrixSizes'))
       return
     }
     const matrix: BulkGridCell[] = []
-    for (const s of shoeSizes) {
+    for (const s of matrixSizes) {
       const cell = matrixCells[s.id] || { purchase: '0', list: '0', qty: '0' }
       const qty = Math.max(0, Math.floor(Number(digitsOnly(cell.qty)) || 0))
       const listInt = digitsOnly(cell.list) || '0'
@@ -394,7 +447,9 @@ export function CatalogPage({
         color: '',
       }))
       setMatrixCells({})
-      setWizardStep(1)
+      setWizardStepIndex(0)
+      setWizardKind(null)
+      setWizardGender(null)
     } catch (e: unknown) {
       const rawMessage = e instanceof Error ? e.message : String(e || '')
       if (rawMessage.startsWith('Printer ulanmagan:')) {
@@ -407,12 +462,54 @@ export function CatalogPage({
     }
   }
 
+  function sizeAlreadyExists(value: string, kind: ProductKind, ageBand: SizeLinePreset, gender: ClothingGender) {
+    return sizes.some((s) => {
+      if (s.value !== value && s.label_uz !== value && s.label_ru !== value) return false
+      if (kind === 'FOOTWEAR') {
+        return (s.kind || '') === 'FOOTWEAR' || (!(s.kind || '').trim() && /^\d+$/.test(s.value))
+      }
+      const sg = sizeLinePreset === 'children' ? 'UNISEX' : gender
+      return (
+        (s.kind || '') === 'CLOTHING' &&
+        (s.age_band || '') === ageBand &&
+        ((s.gender || '') === sg || sizeLinePreset === 'children')
+      )
+    })
+  }
+
   async function ensureSizeLineAndStandardColors() {
-    const range = SIZE_LINE_RANGES[sizeLinePreset]
-    for (let value = range.min; value <= range.max; value += 1) {
-      const asText = String(value)
-      if (!sizes.some((s) => s.value === asText || s.label_uz === asText || s.label_ru === asText)) {
-        await onCreateSize({ value: asText, label_uz: asText, label_ru: asText, sort_order: value })
+    if (productKind === 'FOOTWEAR') {
+      for (const value of footwearSizeValues(sizeLinePreset)) {
+        if (!sizeAlreadyExists(value, 'FOOTWEAR', sizeLinePreset, 'UNISEX')) {
+          await onCreateSize({
+            value,
+            label_uz: value,
+            label_ru: value,
+            sort_order: Number(value),
+            kind: 'FOOTWEAR',
+            age_band: sizeLinePreset,
+          })
+        }
+      }
+    } else {
+      const values = clothingSizeValues(
+        sizeLinePreset,
+        sizeLinePreset === 'children' ? 'UNISEX' : clothingGender,
+      )
+      for (let idx = 0; idx < values.length; idx += 1) {
+        const value = values[idx]
+        const sg: ClothingGender = sizeLinePreset === 'children' ? 'UNISEX' : clothingGender
+        if (!sizeAlreadyExists(value, 'CLOTHING', sizeLinePreset, sg)) {
+          await onCreateSize({
+            value,
+            label_uz: value,
+            label_ru: value,
+            sort_order: sizeSortOrder(value, idx),
+            kind: 'CLOTHING',
+            age_band: sizeLinePreset,
+            gender: sg,
+          })
+        }
       }
     }
     for (let idx = 0; idx < STANDARD_COLORS.length; idx += 1) {
@@ -428,8 +525,29 @@ export function CatalogPage({
     }
   }
 
+  function wizardBack() {
+    if (wizardStepIndex <= 0) return
+    setWizardStepIndex((i) => i - 1)
+  }
+
   async function wizardNext() {
-    if (wizardStep === 1) {
+    if (currentWizardStep === 'kind') {
+      if (!wizardKind) {
+        setToast(t('admin.catalog.wizard.needProductKind'))
+        return
+      }
+      setWizardStepIndex((i) => i + 1)
+      return
+    }
+    if (currentWizardStep === 'gender') {
+      if (!wizardGender) {
+        setToast(t('admin.catalog.wizard.needGender'))
+        return
+      }
+      setWizardStepIndex((i) => i + 1)
+      return
+    }
+    if (currentWizardStep === 'brand') {
       if (!selectedBrand) {
         setToast(t('admin.catalog.wizard.needBrand'))
         return
@@ -448,15 +566,15 @@ export function CatalogPage({
       } finally {
         setBusy(false)
       }
-      setWizardStep(2)
+      setWizardStepIndex((i) => i + 1)
       return
     }
-    if (wizardStep === 2) {
+    if (currentWizardStep === 'color') {
       if (!form.color) {
         setToast(t('admin.catalog.wizard.needColor'))
         return
       }
-      setWizardStep(3)
+      setWizardStepIndex((i) => i + 1)
       return
     }
   }
@@ -484,7 +602,14 @@ export function CatalogPage({
     if (!model || !brand) return
     setBusy(true)
     try {
-      await onCreateProduct({ category: brand, name_uz: model, name_ru: model })
+      await onCreateProduct({
+        category: brand,
+        name_uz: model,
+        name_ru: model,
+        kind: productKind,
+        gender: productKind === 'CLOTHING' ? clothingGender : '',
+        age_band: sizeLinePreset,
+      })
       setSelectedModel('')
       setNewModel('')
       setToast(t('admin.catalog.modelCreated'))
@@ -705,14 +830,17 @@ export function CatalogPage({
         >
           <div className="text-sm font-medium text-slate-200 inline-flex items-center gap-2">
             <PackagePlus className="h-5 w-5 text-emerald-400 shrink-0" aria-hidden />
-            {t('admin.catalog.wizard.progress', { step: wizardStep })}
+            {t('admin.catalog.wizard.progress', {
+              step: wizardStepIndex + 1,
+              total: wizardSteps.length,
+            })}
           </div>
           <div className="flex items-center gap-2">
             <div className="flex gap-2">
-              {[1, 2, 3].map((s) => (
+              {wizardSteps.map((_, idx) => (
                 <div
-                  key={s}
-                  className={`h-2 w-10 rounded-full ${wizardStep >= s ? 'bg-emerald-500' : 'bg-slate-700'}`}
+                  key={idx}
+                  className={`h-2 w-10 rounded-full ${wizardStepIndex >= idx ? 'bg-emerald-500' : 'bg-slate-700'}`}
                 />
               ))}
             </div>
@@ -720,7 +848,77 @@ export function CatalogPage({
           </div>
         </button>
 
-        {wizardOpen && wizardStep === 1 && (
+        {wizardOpen && currentWizardStep === 'kind' && (
+          <div className="space-y-4">
+            <div className="text-base text-slate-100">{t('admin.catalog.wizard.stepKindTitle')}</div>
+            <p className="text-sm text-slate-400">{t('admin.catalog.wizard.stepKindHint')}</p>
+            <div className="flex flex-wrap gap-2">
+              {(['FOOTWEAR', 'CLOTHING'] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  className={`touch-btn min-h-14 px-6 rounded-xl border font-medium ${
+                    wizardKind === k
+                      ? 'border-emerald-500 bg-emerald-950/50 text-emerald-100'
+                      : 'border-slate-700 bg-slate-900'
+                  }`}
+                  onClick={() => setWizardKind(k)}
+                >
+                  {t(`admin.catalog.productKind.${k}`)}
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                className="touch-btn min-h-14 px-6 rounded-xl bg-emerald-700 border border-emerald-500 font-semibold"
+                onClick={() => void wizardNext()}
+              >
+                {t('admin.catalog.wizard.next')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {wizardOpen && currentWizardStep === 'gender' && (
+          <div className="space-y-4">
+            <div className="text-base text-slate-100">{t('admin.catalog.wizard.stepGenderTitle')}</div>
+            <div className="flex flex-wrap gap-2">
+              {(['MALE', 'FEMALE'] as const).map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  className={`touch-btn min-h-14 px-6 rounded-xl border font-medium ${
+                    wizardGender === g
+                      ? 'border-emerald-500 bg-emerald-950/50 text-emerald-100'
+                      : 'border-slate-700 bg-slate-900'
+                  }`}
+                  onClick={() => setWizardGender(g)}
+                >
+                  {t(`admin.catalog.clothingGender.${g}`)}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap justify-between gap-3">
+              <button
+                type="button"
+                className="touch-btn min-h-14 px-6 rounded-xl bg-slate-800 border border-slate-600"
+                onClick={wizardBack}
+              >
+                {t('admin.catalog.wizard.back')}
+              </button>
+              <button
+                type="button"
+                className="touch-btn min-h-14 px-6 rounded-xl bg-emerald-700 border border-emerald-500 font-semibold"
+                onClick={() => void wizardNext()}
+              >
+                {t('admin.catalog.wizard.next')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {wizardOpen && currentWizardStep === 'brand' && (
           <div className="space-y-3">
             <div className="text-base text-slate-100">{t('admin.catalog.wizard.step1Title')}</div>
             <div className="grid md:grid-cols-2 gap-3">
@@ -832,11 +1030,24 @@ export function CatalogPage({
                         checked={sizeLinePreset === preset}
                         onChange={() => setSizeLinePreset(preset)}
                       />
-                      {t(`admin.catalog.sizeLinePreset.${preset}`)}
+                      {t(
+                        isClothingMode
+                          ? `admin.catalog.clothingSizeLinePreset.${preset}`
+                          : `admin.catalog.sizeLinePreset.${preset}`,
+                      )}
                     </label>
                   ))}
                 </div>
               </div>
+              {wizardStepIndex > 0 && (
+                <button
+                  type="button"
+                  className="touch-btn min-h-14 px-6 rounded-xl bg-slate-800 border border-slate-600"
+                  onClick={wizardBack}
+                >
+                  {t('admin.catalog.wizard.back')}
+                </button>
+              )}
               <button
                 type="button"
                 className="touch-btn min-h-14 px-6 rounded-xl bg-emerald-700 border border-emerald-500 font-semibold"
@@ -848,7 +1059,7 @@ export function CatalogPage({
           </div>
         )}
 
-        {wizardOpen && wizardStep === 2 && (
+        {wizardOpen && currentWizardStep === 'color' && (
           <div className="space-y-4">
             <div className="text-base text-slate-100">{t('admin.catalog.wizard.step2ColorTitle')}</div>
             <p className="text-sm text-slate-400">{t('admin.catalog.wizard.step2ColorHint')}</p>
@@ -876,7 +1087,7 @@ export function CatalogPage({
               <button
                 type="button"
                 className="touch-btn min-h-14 px-6 rounded-xl bg-slate-800 border border-slate-600"
-                onClick={() => setWizardStep(1)}
+                onClick={wizardBack}
               >
                 {t('admin.catalog.wizard.back')}
               </button>
@@ -891,11 +1102,15 @@ export function CatalogPage({
           </div>
         )}
 
-        {wizardOpen && wizardStep === 3 && (
+        {wizardOpen && currentWizardStep === 'matrix' && (
           <div className="space-y-4">
             <div className="text-base text-slate-100">
               {t('admin.catalog.wizard.step3MatrixTitle', {
-                range: t(`admin.catalog.sizeLinePresetRange.${sizeLinePreset}`),
+                range: t(
+                  isClothingMode
+                    ? `admin.catalog.clothingSizeLinePresetRange.${sizeLinePreset}`
+                    : `admin.catalog.sizeLinePresetRange.${sizeLinePreset}`,
+                ),
               })}
             </div>
             <p className="text-sm text-slate-400">{t('admin.catalog.wizard.step3MatrixHint')}</p>
@@ -939,7 +1154,7 @@ export function CatalogPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {shoeSizes.map((s) => {
+                  {matrixSizes.map((s) => {
                     const cell = matrixCells[s.id] || { purchase: '0', list: '0', qty: '0' }
                     return (
                       <tr key={s.id} className="border-t border-slate-800">
@@ -990,9 +1205,7 @@ export function CatalogPage({
               <button
                 type="button"
                 className="touch-btn min-h-14 px-6 rounded-xl bg-slate-800 border border-slate-600"
-                onClick={() => {
-                  setWizardStep(2)
-                }}
+                onClick={wizardBack}
               >
                 {t('admin.catalog.wizard.back')}
               </button>

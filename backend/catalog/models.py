@@ -15,12 +15,47 @@ class Category(models.Model):
         ordering = ["sort_order", "name_uz"]
 
 
+class ProductKind(models.TextChoices):
+    FOOTWEAR = "FOOTWEAR", "Footwear"
+    CLOTHING = "CLOTHING", "Clothing"
+
+
+class ClothingGender(models.TextChoices):
+    MALE = "MALE", "Male"
+    FEMALE = "FEMALE", "Female"
+    UNISEX = "UNISEX", "Unisex"
+
+
+class AgeBand(models.TextChoices):
+    CHILDREN = "children", "Children"
+    TEEN = "teen", "Teen"
+    ADULT = "adult", "Adult"
+
+
 class Size(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     value = models.CharField(max_length=32)
     label_uz = models.CharField(max_length=64)
     label_ru = models.CharField(max_length=64)
     sort_order = models.PositiveIntegerField(default=0)
+    kind = models.CharField(
+        max_length=16,
+        choices=ProductKind.choices,
+        blank=True,
+        default="",
+    )
+    age_band = models.CharField(
+        max_length=16,
+        choices=AgeBand.choices,
+        blank=True,
+        default="",
+    )
+    gender = models.CharField(
+        max_length=16,
+        choices=ClothingGender.choices,
+        blank=True,
+        default="",
+    )
 
     class Meta:
         ordering = ["sort_order", "value"]
@@ -44,6 +79,22 @@ class Product(models.Model):
     )
     name_uz = models.CharField(max_length=255)
     name_ru = models.CharField(max_length=255)
+    kind = models.CharField(
+        max_length=16,
+        choices=ProductKind.choices,
+        default=ProductKind.FOOTWEAR,
+    )
+    gender = models.CharField(
+        max_length=16,
+        choices=ClothingGender.choices,
+        blank=True,
+        default="",
+    )
+    age_band = models.CharField(
+        max_length=16,
+        choices=AgeBand.choices,
+        default=AgeBand.ADULT,
+    )
     is_active = models.BooleanField(default=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
 

@@ -29,6 +29,7 @@ import {
   fetchStocktakeSession,
   listStocktakeSessions,
   fetchStoreSettings,
+  fetchSetupStatus,
   fetchVariants,
   logout,
   repayDebt,
@@ -66,6 +67,7 @@ import { BootScreen } from './components/BootScreen'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { ActivationPage } from './pages/ActivationPage'
 import { LoginPage } from './pages/LoginPage'
+import { ShopSetupPage } from './pages/ShopSetupPage'
 import { PosPage } from './pages/PosPage'
 import { dispatchLabel, printReceiptWithFallback } from './utils/printingHub'
 import {
@@ -126,6 +128,7 @@ const ReturnSalePage = lazy(async () => {
 
 export default function App() {
   const [booting, setBooting] = useState(true)
+  const [setupCompleted, setSetupCompleted] = useState(true)
   const [authed, setAuthed] = useState(false)
   const [role, setRole] = useState<UserRole | null>(null)
   const [includeDeleted, setIncludeDeleted] = useState(false)
@@ -369,6 +372,12 @@ export default function App() {
   useEffect(() => {
     ;(async () => {
       try {
+        const setup = await fetchSetupStatus()
+        setSetupCompleted(setup.setup_completed)
+      } catch {
+        setSetupCompleted(true)
+      }
+      try {
         const me = await fetchMe()
         setRole(me.role)
         setAuthed(true)
@@ -460,6 +469,16 @@ export default function App() {
 
   if (booting) return <BootScreen stage="app_loading" />
   if (authed && !role) return <BootScreen stage="app_loading" />
+
+  if (!setupCompleted) {
+    return (
+      <ShopSetupPage
+        onDone={async () => {
+          setSetupCompleted(true)
+        }}
+      />
+    )
+  }
 
   if (!authed) {
     return (
@@ -754,6 +773,8 @@ function AdminPanel(props: {
     scanner_prefix: string
     scanner_suffix: string
     lock_timeout_minutes?: number
+    shop_mode?: import('./api').ShopMode
+    default_clothing_gender?: import('./api').ClothingGender | ''
     logo?: File | null
   }) => Promise<void>
   onFilterSales: (from: string, to: string, q: string) => void
@@ -865,6 +886,8 @@ function AdminPanel(props: {
             path="catalog"
             element={
               isCashier ? <Navigate to="/admin/sales" replace /> : <CatalogPage
+                shopMode={props.settings?.shop_mode || 'FOOTWEAR_ONLY'}
+                defaultClothingGender={props.settings?.default_clothing_gender || ''}
                 categories={props.categories}
                 products={props.products}
                 sizes={props.sizes}

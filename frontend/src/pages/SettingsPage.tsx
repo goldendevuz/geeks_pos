@@ -11,6 +11,8 @@ import {
   type LicenseStatus,
   type PinUser,
   type StocktakeSession,
+  type ClothingGender,
+  type ShopMode,
   type StoreSettings,
 } from '../api'
 import { useTranslation } from 'react-i18next'
@@ -54,6 +56,8 @@ export function SettingsPage({
     scanner_prefix: string
     scanner_suffix: string
     lock_timeout_minutes?: number
+    shop_mode?: ShopMode
+    default_clothing_gender?: ClothingGender | ''
     logo?: File | null
   }) => Promise<void>
   onSaveIntegrations: (data: IntegrationSettings) => Promise<void>
@@ -98,7 +102,11 @@ export function SettingsPage({
     scanner_prefix: settings?.scanner_prefix ?? '',
     scanner_suffix: settings?.scanner_suffix ?? '\t',
     lock_timeout_minutes: settings?.lock_timeout_minutes ?? 5,
+    shop_mode: (settings?.shop_mode || 'FOOTWEAR_ONLY') as ShopMode,
+    default_clothing_gender: (settings?.default_clothing_gender || '') as ClothingGender | '',
   })
+  const showClothingGenderSetting =
+    form.shop_mode === 'CLOTHING_ONLY' || form.shop_mode === 'MIXED'
   const [pinUsers, setPinUsers] = useState<PinUser[]>([])
   const [pinDrafts, setPinDrafts] = useState<Record<string, string>>({})
   const [printerOptions, setPrinterOptions] = useState<string[]>([])
@@ -141,6 +149,8 @@ export function SettingsPage({
       scanner_prefix: settings?.scanner_prefix ?? '',
       scanner_suffix: settings?.scanner_suffix ?? '\t',
       lock_timeout_minutes: settings?.lock_timeout_minutes ?? 5,
+      shop_mode: (settings?.shop_mode || 'FOOTWEAR_ONLY') as ShopMode,
+      default_clothing_gender: (settings?.default_clothing_gender || '') as ClothingGender | '',
     })
   }, [settings])
 
@@ -317,6 +327,44 @@ export function SettingsPage({
                 <h3 className="font-medium">{t('admin.settings.saveSettings')}</h3>
               </div>
               <div className="grid md:grid-cols-2 gap-3">
+                <div className="md:col-span-2 space-y-1">
+                  <label className="block text-xs text-slate-400">{t('admin.settings.shopMode')}</label>
+                  <p className="text-xs text-slate-500">{t('admin.settings.shopModeHint')}</p>
+                  <select
+                    className={inputCls}
+                    value={form.shop_mode}
+                    onChange={(e) =>
+                      setForm({ ...form, shop_mode: e.target.value as ShopMode })
+                    }
+                  >
+                    {(['FOOTWEAR_ONLY', 'CLOTHING_ONLY', 'MIXED'] as const).map((m) => (
+                      <option key={m} value={m}>
+                        {t(`admin.settings.shopMode.${m}`)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {showClothingGenderSetting && (
+                  <div className="md:col-span-2 space-y-1">
+                    <label className="block text-xs text-slate-400">
+                      {t('admin.settings.defaultClothingGender')}
+                    </label>
+                    <select
+                      className={inputCls}
+                      value={form.default_clothing_gender}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          default_clothing_gender: e.target.value as ClothingGender | '',
+                        })
+                      }
+                    >
+                      <option value="">{t('admin.settings.defaultClothingGenderNone')}</option>
+                      <option value="MALE">{t('admin.catalog.clothingGender.MALE')}</option>
+                      <option value="FEMALE">{t('admin.catalog.clothingGender.FEMALE')}</option>
+                    </select>
+                  </div>
+                )}
                 <div className="space-y-1">
                   <label className="block text-xs text-slate-400">{t('admin.settings.brandName')}</label>
                   <input
