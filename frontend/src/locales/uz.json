@@ -845,5 +845,16 @@
   "admin.suppliers.deleteSupplierConfirm": "Ushbu ta'minotchini o'chirishga ishonchingiz komilmi?",
   "admin.suppliers.deleted": "Ta'minotchi o'chirildi",
   "admin.suppliers.invalidAmount": "Noto'g'ri summa",
-  "admin.suppliers.transactionRecorded": "Tranzaksiya yozildi"
+  "admin.suppliers.transactionRecorded": "Tranzaksiya yozildi",
+  "boot.init": "Dastur ishga tushmoqda...",
+  "boot.runtimeCheck": "Runtime tekshirilmoqda...",
+  "boot.backendSpawn": "Backend ishga tushmoqda...",
+  "boot.backendWait": "Backend kutilmoqda...",
+  "boot.timeoutWarn": "Backend ulanmadi. Qayta urinib ko'ring yoki logni ko'ring.",
+  "boot.failed": "Dastur ishga tushmadi",
+  "boot.appLoading": "Ilova yuklanmoqda...",
+  "boot.pleaseWait": "Iltimos, kutib turing...",
+  "boot.timeoutHint": "Agar muammo davom etsa, logni ko'ring.",
+  "boot.retryServer": "Serverga qayta ulanish",
+  "boot.openLog": "Logni ochish"
 }

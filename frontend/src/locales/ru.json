@@ -845,5 +845,16 @@
   "admin.suppliers.deleteSupplierConfirm": "Вы уверены, что хотите удалить этого поставщика?",
   "admin.suppliers.deleted": "Поставщик удален",
   "admin.suppliers.invalidAmount": "Неверная сумма",
-  "admin.suppliers.transactionRecorded": "Транзакция записана"
+  "admin.suppliers.transactionRecorded": "Транзакция записана",
+  "boot.init": "Приложение запускается...",
+  "boot.runtimeCheck": "Проверка среды выполнения...",
+  "boot.backendSpawn": "Запуск backend...",
+  "boot.backendWait": "Ожидание backend...",
+  "boot.timeoutWarn": "Backend не подключился. Повторите попытку или проверьте логи.",
+  "boot.failed": "Приложение не запустилось",
+  "boot.appLoading": "Загрузка приложения...",
+  "boot.pleaseWait": "Пожалуйста, подождите...",
+  "boot.timeoutHint": "Если проблема сохраняется, проверьте логи.",
+  "boot.retryServer": "Переподключиться к серверу",
+  "boot.openLog": "Открыть логи"
 }

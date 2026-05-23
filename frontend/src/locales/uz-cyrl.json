@@ -852,4 +852,17 @@
   "admin.catalog.wizard.selectColorFirst": "Аввал ранг танланг",
   "admin.catalog.wizard.selectProductFirst": "Аввал маҳсулот танланг",
   "admin.catalog.wizard.purchasePriceRequired": "Сотиб олиш нархи талаб қилинади"
+,
+
+  "boot.init": "Дастур ишга тушмоқда...",
+  "boot.runtimeCheck": "Рунтайм текширилмоқда...",
+  "boot.backendSpawn": "Бэкенд ишга тушмоқда...",
+  "boot.backendWait": "Бэкенд кутилмоқда...",
+  "boot.timeoutWarn": "Бэкенд улан мади. Қайта уриниб кўринг ёки логни кўринг.",
+  "boot.failed": "Дастур ишга тушмади",
+  "boot.appLoading": "Илова юкланмоқда...",
+  "boot.pleaseWait": "Илтимос, кутиб туринг...",
+  "boot.timeoutHint": "Агар муаммо давом этса, логни кўринг.",
+  "boot.retryServer": "Серверга қайта уланиш",
+  "boot.openLog": "Логни очиш"
 }
