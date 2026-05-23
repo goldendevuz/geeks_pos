@@ -62,12 +62,15 @@ class PinUsersView(APIView):
         for user in User.objects.filter(is_active=True).select_related("profile").order_by("username"):
             role = _resolve_role(user)
             profile = getattr(user, "profile", None)
+            pin_enabled = bool(profile and profile.pin_enabled)
+            if not pin_enabled:
+                continue
             rows.append(
                 {
                     "username": user.username,
                     "display_name": user.get_full_name() or user.username,
                     "role": role,
-                    "pin_enabled": bool(profile and profile.pin_enabled),
+                    "pin_enabled": pin_enabled,
                 }
             )
         return Response({"results": rows})

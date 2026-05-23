@@ -126,7 +126,7 @@ export function PosPage({
   const idempotencyGenRef = useRef(0)
   const lastScanRef = useRef<{ code: string; at: number } | null>(null)
   /** Blocks immediate re-add of same barcode until a different sku is scanned. */
-  const scanDupBlockRef = useRef<string | null>(null)
+
   const [buffer, setBuffer] = useState('')
   const [toast, setToast] = useState<{ kind: 'err' | 'ok'; msg: string; muteSound?: boolean } | null>(null)
   const [promptPriceVariant, setPromptPriceVariant] = useState<null | PosVariant>(null)
@@ -583,15 +583,6 @@ export function PosPage({
   async function handleScanSubmit(code: string) {
     const c = code.trim()
     if (!c) return
-    if (scanDupBlockRef.current && scanDupBlockRef.current !== c) {
-      scanDupBlockRef.current = null
-    }
-    if (scanDupBlockRef.current && scanDupBlockRef.current === c) {
-      showToast('err', t('msg.scanDuplicate'))
-      setBuffer('')
-      safeRefocus()
-      return
-    }
     const now = Date.now()
     const prev = lastScanRef.current
     if (prev && prev.code === c && now - prev.at < SCAN_DEBOUNCE_MS) {
@@ -605,7 +596,6 @@ export function PosPage({
       const v = await fetchVariantByBarcode(c)
       setBuffer('')
       addVariantToCart(v)
-      scanDupBlockRef.current = c
     } catch (e: unknown) {
       beepError()
       setScanFlash(true)
@@ -730,14 +720,6 @@ export function PosPage({
         const normalized = normalizeScanValue(buffer, scannerPrefix, scannerSuffix || '\t')
         setBuffer('')
         if (normalized) void handleScanSubmit(normalized)
-      } else if (
-        cart.length > 0 &&
-        !completing &&
-        !completeInFlightRef.current &&
-        !scanFieldPending() &&
-        Date.now() - lastScanTimeRef.current > 500
-      ) {
-        void doComplete()
       }
       return
     }
@@ -795,14 +777,6 @@ export function PosPage({
             const normalized = normalizeScanValue(buffer, scannerPrefix, scannerSuffix || '\t')
             setBuffer('')
             if (normalized) void handleScanSubmit(normalized)
-          } else if (
-            cart.length > 0 &&
-            !completing &&
-            !completeInFlightRef.current &&
-            !scanFieldPending() &&
-            Date.now() - lastScanTimeRef.current > 500
-          ) {
-            void doComplete()
           }
           return
         }

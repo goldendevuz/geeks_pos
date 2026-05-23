@@ -47,6 +47,8 @@ def _tspl_layout_centered(
     w_mm: int,
     h_mm: int,
     barcode: str,
+    has_name: bool = True,
+    has_price: bool = True,
 ) -> dict[str, Any]:
     """
     Vertically centered stack on the physical label; horizontally centered TEXT/BARCODE.
@@ -78,9 +80,19 @@ def _tspl_layout_centered(
     inner_w = max(16, w_dots - 2 * margin)
     inner_h = max(32, h_dots - 2 * margin)
 
+    # Vertical block: center the whole stack in label coordinates (margin box)
+    sc_font = "2"
+    sc_char = 12
+    sc_line_h = 24
+    if compact:
+        sc_font = "1"
+        sc_char = 8
+        sc_line_h = 16
+
     # Reserve bottom text band for price; remaining height = barcode
-    reserved_bottom = gap_after_bc + price_line_h + 4
-    bc_h = inner_h - reserved_bottom
+    reserved_bottom = (gap_after_bc + price_line_h) if has_price else gap_after_bc
+    reserved_top = (sc_line_h + gap_small) if has_name else 0
+    bc_h = inner_h - reserved_bottom - reserved_top
     bc_h = max(32, min(bc_h, inner_h - 20))
     # TSPL BARCODE height is in dots; cap so tiny labels still print
     bc_h = min(bc_h, 220)
@@ -100,21 +112,27 @@ def _tspl_layout_centered(
     bc_w_est = _estimate_code128_width_dots(barcode, best_nar, best_wide)
     x_bc = margin + max(0, (inner_w - bc_w_est) // 2)
 
-    # Vertical block: center the whole stack in label coordinates (margin box)
-    sc_font = "2"
-    sc_char = 12
-    sc_line_h = 24
-    if compact:
-        sc_font = "1"
-        sc_char = 8
-        sc_line_h = 16
 
-    stack_h = sc_line_h + gap_small + bc_h + gap_after_bc + price_line_h
+
+    stack_h = bc_h + gap_after_bc
+    if has_name:
+        stack_h += sc_line_h + gap_small
+    if has_price:
+        stack_h += price_line_h
+
     y0 = margin + max(0, (inner_h - stack_h) // 2)
 
-    y_sc = y0
-    y_bc = y_sc + sc_line_h + gap_small
-    y_price = y_bc + bc_h + gap_after_bc
+    if has_name:
+        y_sc = y0
+        y_bc = y_sc + sc_line_h + gap_small
+    else:
+        y_sc = 0
+        y_bc = y0
+
+    if has_price:
+        y_price = y_bc + bc_h + gap_after_bc
+    else:
+        y_price = 0
 
     return {
         "w_dots": w_dots,
@@ -182,8 +200,17 @@ class TsplRenderer:
             suffix = label_currency_suffix(store_lang, ascii_only=True)
             price = _tspl_literal(f"{self._money(sell)}{suffix}", max_len=24)
 
+        has_name = bool(custom and custom != "-")
+        has_price = bool(print_price and price)
+
         w_mm, h_mm = _tspl_dimensions_mm(size_key)
-        lay = _tspl_layout_centered(w_mm=w_mm, h_mm=h_mm, barcode=barcode)
+        lay = _tspl_layout_centered(
+            w_mm=w_mm, 
+            h_mm=h_mm, 
+            barcode=barcode, 
+            has_name=has_name, 
+            has_price=has_price
+        )
         w_dots = lay["w_dots"]
 
         x_custom = (
