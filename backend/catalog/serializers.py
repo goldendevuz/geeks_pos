@@ -29,6 +29,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "custom_name_uz",
             "custom_name_ru",
             "custom_name_uz_cyrillic",
+            "color",
             "is_active",
             "deleted_at",
             "created_at",
@@ -40,10 +41,17 @@ class ProductVariantSerializer(serializers.ModelSerializer):
     """Full product variant serializer for admin/owner catalog management."""
     product_name_uz = serializers.CharField(source="product.name_uz", read_only=True)
     product_name_ru = serializers.CharField(source="product.name_ru", read_only=True)
+    product_name_uz_cyrillic = serializers.CharField(
+        source="product.name_uz_cyrillic", read_only=True, required=False, allow_null=True
+    )
     product_custom_name_uz = serializers.CharField(source="product.custom_name_uz", read_only=True, required=False)
     product_custom_name_ru = serializers.CharField(source="product.custom_name_ru", read_only=True, required=False)
+    product_custom_name_uz_cyrillic = serializers.CharField(
+        source="product.custom_name_uz_cyrillic", read_only=True, required=False, allow_null=True
+    )
     category_name_uz = serializers.CharField(source="product.category.name_uz", read_only=True)
     category_name_ru = serializers.CharField(source="product.category.name_ru", read_only=True)
+    color = serializers.CharField(source="product.color", read_only=True, required=False, allow_null=True)
 
     class Meta:
         model = ProductVariant
@@ -52,10 +60,13 @@ class ProductVariantSerializer(serializers.ModelSerializer):
             "product",
             "product_name_uz",
             "product_name_ru",
+            "product_name_uz_cyrillic",
             "product_custom_name_uz",
             "product_custom_name_ru",
+            "product_custom_name_uz_cyrillic",
             "category_name_uz",
             "category_name_ru",
+            "color",
             "barcode",
             "purchase_price",
             "list_price",
@@ -92,6 +103,7 @@ class CashierStockRowSerializer(serializers.ModelSerializer):
     product_custom_name_ru = serializers.CharField(source="product.custom_name_ru", read_only=True, required=False, allow_null=True)
     category_name_uz = serializers.CharField(source="product.category.name_uz", read_only=True)
     category_name_ru = serializers.CharField(source="product.category.name_ru", read_only=True)
+    color = serializers.CharField(source="product.color", read_only=True, required=False, allow_null=True)
 
     class Meta:
         model = ProductVariant
@@ -104,6 +116,7 @@ class CashierStockRowSerializer(serializers.ModelSerializer):
             "product_custom_name_ru",
             "category_name_uz",
             "category_name_ru",
+            "color",
             "barcode",
             "list_price",
             "purchase_price",
@@ -124,8 +137,17 @@ class PosProductVariantSerializer(serializers.ModelSerializer):
 
     product_name_uz = serializers.CharField(source="product.name_uz", read_only=True)
     product_name_ru = serializers.CharField(source="product.name_ru", read_only=True)
+    product_name_uz_cyrillic = serializers.CharField(
+        source="product.name_uz_cyrillic", read_only=True, required=False, allow_null=True
+    )
     product_custom_name_uz = serializers.CharField(source="product.custom_name_uz", read_only=True, required=False, allow_null=True)
     product_custom_name_ru = serializers.CharField(source="product.custom_name_ru", read_only=True, required=False, allow_null=True)
+    product_custom_name_uz_cyrillic = serializers.CharField(
+        source="product.custom_name_uz_cyrillic", read_only=True, required=False, allow_null=True
+    )
+    category_name_uz = serializers.CharField(source="product.category.name_uz", read_only=True)
+    category_name_ru = serializers.CharField(source="product.category.name_ru", read_only=True)
+    color = serializers.CharField(source="product.color", read_only=True, required=False, allow_null=True)
 
     class Meta:
         model = ProductVariant
@@ -134,8 +156,13 @@ class PosProductVariantSerializer(serializers.ModelSerializer):
             "product",
             "product_name_uz",
             "product_name_ru",
+            "product_name_uz_cyrillic",
             "product_custom_name_uz",
             "product_custom_name_ru",
+            "product_custom_name_uz_cyrillic",
+            "category_name_uz",
+            "category_name_ru",
+            "color",
             "barcode",
             "list_price",
             "stock_qty",

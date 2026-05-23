@@ -29,9 +29,22 @@ class StocktakeCountSerializer(serializers.Serializer):
 class StocktakeLineSerializer(serializers.ModelSerializer):
     product_name_uz = serializers.CharField(source="variant.product.name_uz", read_only=True)
     product_name_ru = serializers.CharField(source="variant.product.name_ru", read_only=True)
+    product_name_uz_cyrillic = serializers.CharField(
+        source="variant.product.name_uz_cyrillic", read_only=True, required=False, allow_null=True
+    )
+    product_custom_name_uz = serializers.CharField(
+        source="variant.product.custom_name_uz", read_only=True, required=False, allow_null=True
+    )
+    product_custom_name_ru = serializers.CharField(
+        source="variant.product.custom_name_ru", read_only=True, required=False, allow_null=True
+    )
+    product_custom_name_uz_cyrillic = serializers.CharField(
+        source="variant.product.custom_name_uz_cyrillic", read_only=True, required=False, allow_null=True
+    )
     category_name_uz = serializers.CharField(source="variant.product.category.name_uz", read_only=True)
     category_name_ru = serializers.CharField(source="variant.product.category.name_ru", read_only=True)
     barcode = serializers.CharField(source="variant.barcode", read_only=True)
+    color = serializers.CharField(source="variant.product.color", read_only=True, required=False, allow_null=True)
 
     class Meta:
         model = StocktakeLine
@@ -40,9 +53,14 @@ class StocktakeLineSerializer(serializers.ModelSerializer):
             "variant",
             "product_name_uz",
             "product_name_ru",
+            "product_name_uz_cyrillic",
+            "product_custom_name_uz",
+            "product_custom_name_ru",
+            "product_custom_name_uz_cyrillic",
             "category_name_uz",
             "category_name_ru",
             "barcode",
+            "color",
             "expected_qty",
             "counted_qty",
             "variance_qty",

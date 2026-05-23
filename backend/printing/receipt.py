@@ -1,4 +1,4 @@
-﻿import os
+import os
 import re
 import logging
 from decimal import Decimal, ROUND_HALF_UP
@@ -30,6 +30,50 @@ def resolve_receipt_store_lang(settings: StoreSettings, request_lang: str | None
     if raw.startswith("uz"):
         return "uz"
     return _normalize_lang(request_lang)
+
+
+def label_currency_suffix(lang: str, *, ascii_only: bool = False) -> str:
+    """Match frontend money.ts — receipt_lang on store settings."""
+    rl = _normalize_lang(lang)
+    if rl == "ru":
+        return " som" if ascii_only else "\u00a0\u0441\u043e\u043c"
+    return " so'm" if ascii_only else "\u00a0so'm"
+
+
+def _label_custom_name(product, store_lang: str) -> str:
+    """Sticker line: product custom name only (uz or ru by store receipt language)."""
+    rl = _normalize_lang(store_lang)
+    if rl == "ru":
+        return (getattr(product, "custom_name_ru", None) or "").strip()
+    cy = (getattr(product, "custom_name_uz_cyrillic", None) or "").strip()
+    if cy:
+        return cy
+    return (getattr(product, "custom_name_uz", None) or "").strip()
+
+
+def _label_sell_price(variant):
+    """Sell/list price for stickers — never purchase (kirim)."""
+    lp = getattr(variant, "list_price", None)
+    if lp is None:
+        return None
+    amount = Decimal(str(lp))
+    if amount <= 0:
+        return None
+    return amount
+
+
+def resolve_label_show_price(variant, settings, request_show_price=None) -> bool:
+    """
+    Whether to print sell price on a sticker.
+    Variant show_price_on_label=False always hides price; otherwise store default / API override.
+    """
+    if getattr(variant, "show_price_on_label", True) is False:
+        return False
+    if request_show_price is False:
+        return False
+    if request_show_price is True:
+        return True
+    return bool(getattr(settings, "show_price_on_labels_default", True))
 
 
 def _receipt_variant_texts(receipt_lang: str, product) -> str:
@@ -534,7 +578,7 @@ def _label_escpos_barcode_height(size: str) -> int:
     return 72
 
 
-def label_escpos_bytes(*, variant, size: str = "40x30", copies: int = 1, show_price: bool = True) -> bytes:
+def label_escpos_bytes(*, variant, size: str = "40x30", copies: int = 1, show_price: bool | None = None) -> bytes:
     from escpos.printer import Dummy
 
     settings = StoreSettings.get_solo()
@@ -556,21 +600,25 @@ def label_escpos_bytes(*, variant, size: str = "40x30", copies: int = 1, show_pr
             cat = (getattr(c, "name_uz", None) or "").strip()
         brand_src = (settings.brand_name or "").strip() or cat
         brand = brand_src[:cols]
-        model = (variant.product.name_uz or "")[:cols]
-        # Handle null list_price - use purchase_price as fallback or 0
-        price_value = variant.list_price or variant.purchase_price or 0
-        price = _format_amount(price_value) if show_price else ""
+        store_lang = resolve_receipt_store_lang(settings, None)
+        custom = _label_custom_name(variant.product, store_lang)[:cols]
+        print_price = resolve_label_show_price(variant, settings, show_price)
+        sell = _label_sell_price(variant)
+        price = ""
+        if print_price and sell is not None:
+            price = f"{_format_amount(sell)}{label_currency_suffix(store_lang)}"
         bc_h = _label_escpos_barcode_height(size)
         skey = (size or "40x30").strip().lower()
         bc_w = 2 if skey == "40x30" else 3
         for _ in range(max(1, int(copies))):
             p.set(align="center", width=1, height=1)
             p.text(f"{brand}\n")
-            if skey == "40x30":
-                p.set(align="center", width=1, height=1)
-            else:
-                p.set(align="center", width=2, height=2)
-            p.text(f"{model}\n")
+            if custom:
+                if skey == "40x30":
+                    p.set(align="center", width=1, height=1)
+                else:
+                    p.set(align="center", width=2, height=2)
+                p.text(f"{custom}\n")
             p.set(align="center")
             # Avoid python-escpos profile warning on Dummy() printers where media.width.pixel is unset.
             try:
@@ -594,7 +642,7 @@ def label_escpos_bytes(*, variant, size: str = "40x30", copies: int = 1, show_pr
                     align_ct=False,
                 )
             p.text("\n")
-            if show_price and price:
+            if print_price and price:
                 if skey == "40x30":
                     p.set(align="center", width=1, height=2)
                 else:

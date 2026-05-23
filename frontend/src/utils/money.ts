@@ -15,7 +15,10 @@ function moneyLocale(lang?: string): string {
 }
 
 function currencySuffix(lang?: string): string {
-  return resolveLang(lang).startsWith('ru') ? '\u00a0сум' : "\u00a0so'm"
+  const langKey = resolveLang(lang)
+  if (langKey.startsWith('ru')) return '\u00a0сом'
+  if (langKey.startsWith('uz-cyrl') || langKey === 'uz_cyrl') return '\u00a0сўм'
+  return "\u00a0so'm"
 }
 
 /** Format integer money with locale grouping and currency suffix (UZ/RU from i18n). */

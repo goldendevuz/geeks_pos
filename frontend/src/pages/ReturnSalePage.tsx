@@ -14,6 +14,7 @@ import {
 import { requestAdminDataRefresh } from '../utils/adminDataRefresh'
 import { ActionToast } from '../components/ActionToast'
 import { formatMoney } from '../utils/money'
+import { pickBilingualName } from '../utils/localizedName'
 
 const RETURN_SEARCH_DEBOUNCE_MS = 380
 
@@ -30,11 +31,8 @@ type SalePanelHeader = {
   payments?: SalePaymentRow[]
 }
 
-function pickLocalized(uz: string | undefined, ru: string | undefined, langRu: boolean): string {
-  const u = (uz ?? '').trim()
-  const r = (ru ?? '').trim()
-  if (langRu) return r || u || '—'
-  return u || r || '—'
+function pickLocalized(uz: string | undefined, ru: string | undefined, lang: string): string {
+  return pickBilingualName({ name_uz: uz, name_ru: ru }, lang)
 }
 
 function resolvedHeader(sel: SaleSearchForReturnRow | null, meta: SalePanelHeader | null): SalePanelHeader {
@@ -93,9 +91,9 @@ function lineNetUnit(ln: SaleReturnEligibleLineRow): number {
 }
 
 function formatSaleWhen(iso: string | undefined): string {
-  if (!iso) return '—'
+  if (!iso) return ''
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString()
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString()
 }
 
 function StepBar(props: { active: 1 | 2 | 3 }) {
@@ -189,7 +187,7 @@ function ReturnQtyStepper(props: {
 
 export function ReturnSalePage() {
   const { t, i18n } = useTranslation()
-  const langRu = i18n.language.toLowerCase().startsWith('ru')
+  const displayLang = i18n.language
   const [q, setQ] = useState('')
   const [searchBusy, setSearchBusy] = useState(false)
   const [results, setResults] = useState<SaleSearchForReturnRow[]>([])
@@ -559,10 +557,10 @@ export function ReturnSalePage() {
                       <div className="grid sm:grid-cols-[1fr,auto] gap-3 items-center">
                         <div>
                           <div className="font-medium text-sm">
-                            {pickLocalized(ln.product_name_uz, ln.product_name_ru, langRu)}
+                            {pickLocalized(ln.product_name_uz, ln.product_name_ru, displayLang)}
                           </div>
                           <div className="text-xs text-slate-500">
-                            {pickLocalized(ln.category_name_uz, ln.category_name_ru, langRu)}
+                            {pickLocalized(ln.category_name_uz, ln.category_name_ru, displayLang)}
                           </div>
                           <div className="text-xs text-slate-400 mt-0.5 font-mono">{ln.barcode}</div>
                           <p className="text-xs text-slate-500 mt-1">

@@ -122,7 +122,7 @@ class VariantByBarcodeView(APIView):
         if not code:
             return Response({"code": "BARCODE_EMPTY"}, status=400)
         v = (
-            ProductVariant.objects.select_related("product")
+            ProductVariant.objects.select_related("product", "product__category")
             .filter(barcode=code, is_active=True, deleted_at__isnull=True)
             .first()
         )

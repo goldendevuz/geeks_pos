@@ -194,8 +194,10 @@ export type PosVariant = {
   product: string
   product_name_uz: string
   product_name_ru?: string
+  product_name_uz_cyrillic?: string | null
   product_custom_name_uz?: string
   product_custom_name_ru?: string
+  product_custom_name_uz_cyrillic?: string | null
   category_name_uz?: string
   category_name_ru?: string
   barcode: string | null
@@ -459,6 +461,7 @@ export type Product = {
   category: string
   name_uz: string
   name_ru: string
+  color?: string
   is_active: boolean
   deleted_at: string | null
 }
@@ -479,6 +482,7 @@ export type Variant = {
   hide_selling_price: boolean
   is_active: boolean
   deleted_at: string | null
+  color?: string | null
 }
 
 /** Cashier read-only stock list (no purchase_price). */
@@ -497,6 +501,7 @@ export type CashierStockVariant = {
   stock_qty: number
   is_active: boolean
   hide_selling_price: boolean
+  color?: string | null
 }
 
 export type CashierXReport = {
@@ -617,6 +622,7 @@ export async function updateProduct(productId: string, body: {
   custom_name_uz?: string
   custom_name_ru?: string
   custom_name_uz_cyrillic?: string
+  color?: string
 }) {
   const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
   const r = await fetch(`${API}/api/catalog/products/${productId}/`, {
@@ -709,6 +715,8 @@ export async function updateVariant(
     list_price: string
     is_active: boolean
     barcode: string
+    hide_selling_price: boolean
+    show_price_on_label: boolean
   }>,
 ) {
   const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
@@ -892,14 +900,48 @@ export type ShopExpenseRow = {
   cashier_username?: string
 }
 
-export async function fetchShopExpenses(params?: { from?: string; to?: string }): Promise<ShopExpenseRow[]> {
+export type PaginatedExpenses = {
+  count: number
+  next: string | null
+  previous: string | null
+  results: ShopExpenseRow[]
+}
+
+export async function fetchShopExpenses(params?: {
+  from?: string
+  to?: string
+  page?: number
+  page_size?: number
+}): Promise<PaginatedExpenses> {
   const q = new URLSearchParams()
   if (params?.from) q.set('from', params.from)
   if (params?.to) q.set('to', params.to)
+  if (params?.page) q.set('page', String(params.page))
+  if (params?.page_size) q.set('page_size', String(params.page_size))
   const qs = q.toString() ? `?${q.toString()}` : ''
   const r = await fetch(`${API}/api/expenses/${qs}`, { credentials: 'include' })
   if (!r.ok) throw await parseErrorResponse(r, 'FETCH_EXPENSES_FAILED')
-  return r.json()
+  const j = await r.json()
+  if (Array.isArray(j)) {
+    return { count: j.length, next: null, previous: null, results: j as ShopExpenseRow[] }
+  }
+  return j as PaginatedExpenses
+}
+
+export async function updateShopExpense(
+  id: string,
+  payload: { amount?: string; category?: ExpenseCategory; note?: string },
+): Promise<ShopExpenseRow> {
+  const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
+  const r = await fetch(`${API}/api/expenses/${id}/`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+    body: JSON.stringify(payload),
+  })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw new AppError(j.code || 'UPDATE_EXPENSE_FAILED', j.detail)
+  return j as ShopExpenseRow
 }
 
 export async function createShopExpense(payload: {
@@ -1268,9 +1310,14 @@ export type StocktakeSession = {
     variant: string
     product_name_uz: string
     product_name_ru?: string
+    product_name_uz_cyrillic?: string | null
+    product_custom_name_uz?: string | null
+    product_custom_name_ru?: string | null
+    product_custom_name_uz_cyrillic?: string | null
     category_name_uz?: string
     category_name_ru?: string
     barcode: string
+    color?: string | null
     expected_qty: number
     counted_qty: number | null
     variance_qty: number
@@ -1623,14 +1670,13 @@ export async function recordSupplierPayment(
   supplierId: string,
   amount: number,
   note: string,
+  txType?: 'PAYMENT' | 'PURCHASE',
 ): Promise<SupplierTransaction> {
   const csrf = (await fetchCsrf()) || getCookie('csrftoken') || ''
-  // Determine transaction type based on amount sign:
-  // Negative amount = PAYMENT (reduces debt)
-  // Positive amount = PURCHASE (increases debt)
-  const type = amount < 0 ? 'PAYMENT' : 'PURCHASE'
+  const type =
+    txType ?? (amount < 0 ? 'PAYMENT' : 'PURCHASE')
   const absoluteAmount = Math.abs(amount)
-  
+
   const r = await fetch(`${API}/api/catalog/suppliers/${supplierId}/transactions/`, {
     method: 'POST',
     credentials: 'include',

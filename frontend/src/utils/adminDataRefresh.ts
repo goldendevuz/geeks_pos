@@ -2,6 +2,14 @@
 
 export const GEEKS_REFRESH_ADMIN_EVENT = 'geekspos-refresh-admin-data'
 
+export const GEEKS_STORE_SETTINGS_EVENT = 'geekspos-store-settings-updated'
+
+export function notifyStoreSettingsUpdated(): void {
+  window.dispatchEvent(
+    new CustomEvent(GEEKS_STORE_SETTINGS_EVENT, { detail: { at: Date.now() } }),
+  )
+}
+
 
 
 export type AdminRefreshDetail = {

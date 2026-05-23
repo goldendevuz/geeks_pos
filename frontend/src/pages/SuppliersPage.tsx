@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Plus, Edit, Trash2, Building2, DollarSign, ChevronLeft, Search } from 'lucide-react'
 import { formatMoney } from '../utils/money'
+import { pickBilingualName } from '../utils/localizedName'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { ActionToast } from '../components/ActionToast'
 import {
@@ -23,7 +24,8 @@ export type SupplierWithDebt = Supplier & {
 
 export function SuppliersPage() {
   const { t, i18n } = useTranslation()
-  const langRu = i18n.language.toLowerCase().startsWith('ru')
+  type TxFilter = 'all' | 'payment' | 'debt'
+  const [txFilter, setTxFilter] = useState<TxFilter>('all')
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [balances, setBalances] = useState<Record<string, SupplierBalance>>({})
   const [transactions, setTransactions] = useState<Record<string, SupplierTransaction[]>>({})
@@ -41,14 +43,29 @@ export function SuppliersPage() {
   const [toast, setToast] = useState<{ kind: 'ok' | 'err' | 'info'; message: string } | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [form, setForm] = useState({
-    name_uz: '',
-    name_ru: '',
+    name: '',
     contact_person: '',
     phone: '',
-    email: '',
     address: '',
-    opening_balance: ''
+    opening_balance: '',
   })
+
+  function supplierDisplayName(s: Supplier): string {
+    return pickBilingualName(s, i18n.language)
+  }
+
+  function txTypeLabel(type: SupplierTransaction['type']): string {
+    if (type === 'PAYMENT') return t('admin.suppliers.payment')
+    if (type === 'RETURN') return t('admin.suppliers.return')
+    if (type === 'CREDIT_MEMO') return t('admin.suppliers.creditMemo')
+    return t('admin.suppliers.purchase')
+  }
+
+  function filterTransactions(list: SupplierTransaction[]): SupplierTransaction[] {
+    if (txFilter === 'payment') return list.filter((tx) => tx.type === 'PAYMENT')
+    if (txFilter === 'debt') return list.filter((tx) => tx.type === 'PURCHASE')
+    return list
+  }
 
   useEffect(() => {
     loadSuppliers()
@@ -71,8 +88,7 @@ export function SuppliersPage() {
       }
     } catch (error) {
       console.error('Failed to load suppliers:', error)
-      const msg = error instanceof Error ? error.message : 'Failed to load suppliers'
-      setToast({ kind: 'err', message: msg })
+      setToast({ kind: 'err', message: t('err.SUPPLIER_LOAD_FAILED') })
     } finally {
       setLoading(false)
     }
@@ -99,13 +115,14 @@ export function SuppliersPage() {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     try {
+      const trimmedName = form.name.trim()
       const supplierData = {
-        name_uz: form.name_uz,
-        name_ru: form.name_ru,
+        name_uz: trimmedName,
+        name_ru: trimmedName,
         contact_person: form.contact_person,
         phone: form.phone,
-        email: form.email,
-        address: form.address
+        email: '',
+        address: form.address,
       }
       
       let supplierId: string
@@ -128,24 +145,21 @@ export function SuppliersPage() {
       await loadSuppliers()
       setShowForm(false)
       setEditingId(null)
-      setForm({ name_uz: '', name_ru: '', contact_person: '', phone: '', email: '', address: '', opening_balance: '' })
-      setToast({ kind: 'ok', message: t('admin.common.saved', 'Saved') })
+      setForm({ name: '', contact_person: '', phone: '', address: '', opening_balance: '' })
+      setToast({ kind: 'ok', message: t('admin.common.saved') })
     } catch (error) {
       console.error('Failed to save supplier:', error)
-      const msg = error instanceof Error ? error.message : 'Failed to save supplier'
-      setToast({ kind: 'err', message: msg })
+      setToast({ kind: 'err', message: t('err.SUPPLIER_SAVE_FAILED') })
     }
   }
 
   const handleEdit = (supplier: Supplier) => {
     setForm({
-      name_uz: supplier.name_uz,
-      name_ru: supplier.name_ru,
-      contact_person: supplier.contact_person,
-      phone: supplier.phone,
-      email: supplier.email,
-      address: supplier.address,
-      opening_balance: ''
+      name: supplierDisplayName(supplier),
+      contact_person: supplier.contact_person || '',
+      phone: supplier.phone || '',
+      address: supplier.address || '',
+      opening_balance: '',
     })
     setEditingId(supplier.id)
     setShowForm(true)
@@ -161,10 +175,10 @@ export function SuppliersPage() {
       await deleteSupplier(id)
       await loadSuppliers()
       setDeleteConfirm(null)
-      setToast({ kind: 'ok', message: t('admin.suppliers.deleted', 'Supplier deleted') })
+      setToast({ kind: 'ok', message: t('admin.suppliers.deleted') })
     } catch (error) {
       console.error('Failed to delete supplier:', error)
-      setToast({ kind: 'err', message: t('admin.common.error', 'Error') })
+      setToast({ kind: 'err', message: t('admin.common.error') })
     } finally {
       setDeleteBusy(false)
     }
@@ -174,7 +188,7 @@ export function SuppliersPage() {
     if (!paymentModal) return
     const amount = parseFloat(paymentAmount || '0')
     if (amount <= 0) {
-      setToast({ kind: 'err', message: t('admin.suppliers.invalidAmount', 'Please enter a valid amount') })
+      setToast({ kind: 'err', message: t('admin.suppliers.invalidAmount') })
       return
     }
 
@@ -182,8 +196,14 @@ export function SuppliersPage() {
     try {
       // For payment: negative amount (reduces debt)
       // For debt: positive amount (increases debt)
-      const actualAmount = paymentType === 'payment' ? -amount : amount
-      await recordSupplierPayment(paymentModal.supplier_id, actualAmount, paymentNote || `${paymentType === 'payment' ? 'Payment' : 'Debt'} recorded`)
+      const defaultNote =
+        paymentType === 'payment' ? t('admin.suppliers.payment') : t('admin.suppliers.purchase')
+      await recordSupplierPayment(
+        paymentModal.supplier_id,
+        amount,
+        paymentNote || defaultNote,
+        paymentType === 'payment' ? 'PAYMENT' : 'PURCHASE',
+      )
       setPaymentAmount('')
       setPaymentNote('')
       setPaymentType('payment')
@@ -191,18 +211,17 @@ export function SuppliersPage() {
       // Reload the balance and transactions after successful operation
       await loadSupplierBalance(paymentModal.supplier_id)
       await loadSupplierTransactions(paymentModal.supplier_id)
-      setToast({ kind: 'ok', message: t('admin.suppliers.transactionRecorded', 'Transaction recorded') })
+      setToast({ kind: 'ok', message: t('admin.suppliers.transactionRecorded') })
     } catch (error) {
       console.error('Failed to record transaction:', error)
-      const msg = error instanceof Error ? error.message : 'Error recording transaction'
-      setToast({ kind: 'err', message: msg })
+      setToast({ kind: 'err', message: t('err.SUPPLIER_TRANSACTION_FAILED') })
     } finally {
       setPaymentBusy(false)
     }
   }
 
-  const filteredSuppliers = suppliers.filter(s => {
-    const name = langRu ? s.name_ru : s.name_uz
+  const filteredSuppliers = suppliers.filter((s) => {
+    const name = supplierDisplayName(s)
     return name.toLowerCase().includes(searchQuery.toLowerCase())
   })
 
@@ -219,7 +238,8 @@ export function SuppliersPage() {
   if (selectedSupplier) {
     const balance = balances[selectedSupplier.id]
     const txList = transactions[selectedSupplier.id] || []
-    const supplierName = langRu ? selectedSupplier.name_ru : selectedSupplier.name_uz
+    const supplierName = supplierDisplayName(selectedSupplier)
+    const filteredTx = filterTransactions(txList)
 
     return (
       <div className="p-4 sm:p-6 space-y-4">
@@ -237,19 +257,15 @@ export function SuppliersPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
             <div className="bg-slate-800 rounded-lg p-4">
               <div className="text-xs text-slate-400 mb-1">{t('admin.suppliers.contactPerson')}</div>
-              <div className="text-slate-100 font-medium">{selectedSupplier.contact_person || '—'}</div>
+              <div className="text-slate-100 font-medium">{selectedSupplier.contact_person || ''}</div>
             </div>
             <div className="bg-slate-800 rounded-lg p-4">
               <div className="text-xs text-slate-400 mb-1">{t('admin.suppliers.phone')}</div>
-              <div className="text-slate-100 font-medium">{selectedSupplier.phone || '—'}</div>
+              <div className="text-slate-100 font-medium">{selectedSupplier.phone || ''}</div>
             </div>
-            <div className="bg-slate-800 rounded-lg p-4">
-              <div className="text-xs text-slate-400 mb-1">{t('admin.suppliers.email')}</div>
-              <div className="text-slate-100 font-medium text-sm break-all">{selectedSupplier.email || '—'}</div>
-            </div>
-            <div className="bg-slate-800 rounded-lg p-4">
+            <div className="bg-slate-800 rounded-lg p-4 sm:col-span-2">
               <div className="text-xs text-slate-400 mb-1">{t('admin.suppliers.address')}</div>
-              <div className="text-slate-100 font-medium text-sm">{selectedSupplier.address || '—'}</div>
+              <div className="text-slate-100 font-medium text-sm">{selectedSupplier.address || ''}</div>
             </div>
           </div>
 
@@ -283,14 +299,34 @@ export function SuppliersPage() {
 
         {txList.length > 0 && (
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 sm:p-6">
-            <h3 className="text-lg font-semibold text-slate-100 mb-4">{t('admin.suppliers.transactions')}</h3>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+              <h3 className="text-lg font-semibold text-slate-100">{t('admin.suppliers.transactions')}</h3>
+              <div className="flex flex-wrap gap-2">
+                {(['all', 'payment', 'debt'] as const).map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    className={`touch-btn text-xs px-3 py-2 rounded-lg border ${
+                      txFilter === f
+                        ? 'bg-emerald-700 border-emerald-500 text-white'
+                        : 'bg-slate-800 border-slate-600 text-slate-300'
+                    }`}
+                    onClick={() => setTxFilter(f)}
+                  >
+                    {f === 'all'
+                      ? t('admin.suppliers.filterAll')
+                      : f === 'payment'
+                        ? t('admin.suppliers.filterPayments')
+                        : t('admin.suppliers.filterDebt')}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="space-y-2 max-h-96 overflow-y-auto">
-              {txList.map((tx) => (
+              {filteredTx.map((tx) => (
                 <div key={tx.id} className="bg-slate-800 rounded-lg p-3 flex justify-between items-start">
                   <div className="flex-1">
-                    <div className="text-sm font-medium text-slate-100">
-                      {tx.type === 'PAYMENT' ? t('admin.suppliers.payment') : t('admin.suppliers.purchase')}
-                    </div>
+                    <div className="text-sm font-medium text-slate-100">{txTypeLabel(tx.type)}</div>
                     <div className="text-xs text-slate-400 mt-1">
                       {new Date(tx.created_at).toLocaleDateString()} {new Date(tx.created_at).toLocaleTimeString()}
                     </div>
@@ -313,13 +349,13 @@ export function SuppliersPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-100">{t('admin.sidebar.suppliers')}</h1>
-          <p className="text-sm text-slate-400 mt-1">{t('admin.suppliers.hint', 'Manage your suppliers and track payments')}</p>
+          <p className="text-sm text-slate-400 mt-1">{t('admin.suppliers.hint')}</p>
         </div>
         <button
           onClick={() => {
             setShowForm(true)
             setEditingId(null)
-            setForm({ name_uz: '', name_ru: '', contact_person: '', phone: '', email: '', address: '', opening_balance: '' })
+            setForm({ name: '', contact_person: '', phone: '', address: '', opening_balance: '' })
           }}
           className="touch-btn min-h-12 px-4 rounded-xl bg-emerald-700 border border-emerald-500 text-white font-medium flex items-center justify-center gap-2"
         >
@@ -335,25 +371,14 @@ export function SuppliersPage() {
           </h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">{t('admin.suppliers.nameUz')}</label>
+              <div className="sm:col-span-2">
+                <label className="text-xs text-slate-400 block mb-1">{t('admin.suppliers.nameSingle')}</label>
                 <input
                   type="text"
-                  placeholder={t('admin.suppliers.namePlaceholder', 'Uzbek name')}
-                  value={form.name_uz}
-                  onChange={(e) => setForm({ ...form, name_uz: e.target.value })}
-                  className="touch-btn w-full min-h-10 px-3 rounded-xl bg-slate-800 border border-slate-700 text-slate-100"
-                  required
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">{t('admin.suppliers.nameRu')}</label>
-                <input
-                  type="text"
-                  placeholder={t('admin.suppliers.namePlaceholder', 'Russian name')}
-                  value={form.name_ru}
-                  onChange={(e) => setForm({ ...form, name_ru: e.target.value })}
-                  className="touch-btn w-full min-h-10 px-3 rounded-xl bg-slate-800 border border-slate-700 text-slate-100"
+                  placeholder={t('admin.suppliers.namePlaceholder')}
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  className="touch-btn w-full min-h-12 px-3 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-base"
                   required
                 />
               </div>
@@ -361,30 +386,20 @@ export function SuppliersPage() {
                 <label className="text-xs text-slate-400 block mb-1">{t('admin.suppliers.contactPerson')}</label>
                 <input
                   type="text"
-                  placeholder={t('admin.suppliers.contactPersonPlaceholder', 'Contact person')}
+                  placeholder={t('admin.suppliers.contactPersonPlaceholder')}
                   value={form.contact_person}
                   onChange={(e) => setForm({ ...form, contact_person: e.target.value })}
-                  className="touch-btn w-full min-h-10 px-3 rounded-xl bg-slate-800 border border-slate-700 text-slate-100"
+                  className="touch-btn w-full min-h-12 px-3 rounded-xl bg-slate-800 border border-slate-700 text-slate-100"
                 />
               </div>
               <div>
                 <label className="text-xs text-slate-400 block mb-1">{t('admin.suppliers.phone')}</label>
                 <input
                   type="tel"
-                  placeholder={t('admin.suppliers.phonePlaceholder', '+998...')}
+                  placeholder={t('admin.suppliers.phonePlaceholder')}
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                  className="touch-btn w-full min-h-10 px-3 rounded-xl bg-slate-800 border border-slate-700 text-slate-100"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="text-xs text-slate-400 block mb-1">{t('admin.suppliers.email')}</label>
-                <input
-                  type="email"
-                  placeholder={t('admin.suppliers.emailPlaceholder', 'email@example.com')}
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  className="touch-btn w-full min-h-10 px-3 rounded-xl bg-slate-800 border border-slate-700 text-slate-100"
+                  className="touch-btn w-full min-h-12 px-3 rounded-xl bg-slate-800 border border-slate-700 text-slate-100"
                 />
               </div>
             </div>
@@ -400,11 +415,11 @@ export function SuppliersPage() {
             </div>
             {!editingId && (
               <div>
-                <label className="text-xs text-slate-400 block mb-1">{t('admin.suppliers.openingDebt', 'Opening Debt (Old Debt)')}</label>
+                <label className="text-xs text-slate-400 block mb-1">{t('admin.suppliers.openingDebt')}</label>
                 <input
                   type="text"
                   inputMode="decimal"
-                  placeholder={t('admin.suppliers.openingDebtPlaceholder', 'Enter if supplier has existing debt')}
+                  placeholder={t('admin.suppliers.openingDebtPlaceholder')}
                   value={form.opening_balance}
                   onChange={(e) => {
                     const val = e.target.value
@@ -414,7 +429,7 @@ export function SuppliersPage() {
                   }}
                   className="touch-btn w-full min-h-10 px-3 rounded-xl bg-slate-800 border border-slate-700 text-slate-100"
                 />
-                <div className="text-xs text-slate-500 mt-1">{t('admin.suppliers.openingDebtHint', 'This will be recorded as initial debt from the supplier')}</div>
+                <div className="text-xs text-slate-500 mt-1">{t('admin.suppliers.openingDebtHint')}</div>
               </div>
             )}
             <div className="flex gap-2 pt-2">
@@ -429,7 +444,7 @@ export function SuppliersPage() {
                 onClick={() => {
                   setShowForm(false)
                   setEditingId(null)
-                  setForm({ name_uz: '', name_ru: '', contact_person: '', phone: '', email: '', address: '', opening_balance: '' })
+                  setForm({ name: '', contact_person: '', phone: '', address: '', opening_balance: '' })
                 }}
                 className="touch-btn flex-1 min-h-12 px-4 rounded-xl bg-slate-700 border border-slate-600 text-slate-300 font-medium"
               >
@@ -463,7 +478,7 @@ export function SuppliersPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredSuppliers.map((supplier) => {
             const balance = balances[supplier.id]
-            const supplierName = langRu ? supplier.name_ru : supplier.name_uz
+            const supplierName = supplierDisplayName(supplier)
             return (
               <button
                 key={supplier.id}
@@ -473,7 +488,7 @@ export function SuppliersPage() {
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex-1">
                     <h3 className="font-semibold text-slate-100 text-sm sm:text-base">{supplierName}</h3>
-                    <p className="text-xs text-slate-400 mt-1">{supplier.contact_person || '—'}</p>
+                    <p className="text-xs text-slate-400 mt-1">{supplier.contact_person || ''}</p>
                   </div>
                   <Building2 className="h-5 w-5 text-slate-600 shrink-0 ml-2" />
                 </div>
@@ -493,33 +508,39 @@ export function SuppliersPage() {
                   </div>
                 )}
 
-                <div className="flex gap-2 mt-4 pt-3 border-t border-slate-800">
+                <div className="flex flex-col gap-2 mt-4 pt-3 border-t border-slate-800">
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation()
                       handleEdit(supplier)
                     }}
-                    className="touch-btn flex-1 min-h-9 px-2 rounded-lg bg-blue-900/30 border border-blue-700/50 text-blue-400 text-xs font-medium hover:bg-blue-900/50"
+                    className="touch-btn w-full min-h-11 px-3 py-2 rounded-lg bg-blue-900/30 border border-blue-700/50 text-blue-200 text-xs font-medium hover:bg-blue-900/50 text-left leading-snug"
                   >
-                    <Edit className="h-3.5 w-3.5 mx-auto" />
+                    <Edit className="h-4 w-4 inline-block mr-2 shrink-0 align-middle" aria-hidden />
+                    {t('admin.suppliers.btnEdit')}
                   </button>
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation()
                       setPaymentModal({ supplier_id: supplier.id, supplier_name: supplierName })
                     }}
-                    className="touch-btn flex-1 min-h-9 px-2 rounded-lg bg-emerald-900/30 border border-emerald-700/50 text-emerald-400 text-xs font-medium hover:bg-emerald-900/50"
+                    className="touch-btn w-full min-h-11 px-3 py-2 rounded-lg bg-emerald-900/30 border border-emerald-700/50 text-emerald-200 text-xs font-medium hover:bg-emerald-900/50 text-left leading-snug"
                   >
-                    <DollarSign className="h-3.5 w-3.5 mx-auto" />
+                    <DollarSign className="h-4 w-4 inline-block mr-2 shrink-0 align-middle" aria-hidden />
+                    {t('admin.suppliers.btnPay')}
                   </button>
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation()
                       handleDelete(supplier.id)
                     }}
-                    className="touch-btn flex-1 min-h-9 px-2 rounded-lg bg-red-900/30 border border-red-700/50 text-red-400 text-xs font-medium hover:bg-red-900/50"
+                    className="touch-btn w-full min-h-11 px-3 py-2 rounded-lg bg-red-900/30 border border-red-700/50 text-red-200 text-xs font-medium hover:bg-red-900/50 text-left leading-snug"
                   >
-                    <Trash2 className="h-3.5 w-3.5 mx-auto" />
+                    <Trash2 className="h-4 w-4 inline-block mr-2 shrink-0 align-middle" aria-hidden />
+                    {t('admin.suppliers.btnDelete')}
                   </button>
                 </div>
               </button>
@@ -552,19 +573,19 @@ export function SuppliersPage() {
 
             <div className="space-y-4">
               <div>
-                <label className="text-xs text-slate-400 block mb-1">{t('admin.suppliers.paymentType', 'Transaction Type')}</label>
+                <label className="text-xs text-slate-400 block mb-1">{t('admin.suppliers.paymentType')}</label>
                 <select
                   value={paymentType}
                   onChange={(e) => setPaymentType(e.target.value as 'payment' | 'debt')}
                   className="touch-btn w-full min-h-10 px-3 rounded-xl bg-slate-800 border border-slate-700 text-slate-100"
                 >
-                  <option value="payment">{t('admin.suppliers.payment', 'Payment to supplier')}</option>
-                  <option value="debt">{t('admin.suppliers.addDebt', 'Record new debt/purchase')}</option>
+                  <option value="payment">{t('admin.suppliers.payment')}</option>
+                  <option value="debt">{t('admin.suppliers.addDebt')}</option>
                 </select>
               </div>
 
               <div>
-                <label className="text-xs text-slate-400 block mb-1">{t('admin.suppliers.amount', 'Amount')}</label>
+                <label className="text-xs text-slate-400 block mb-1">{t('admin.suppliers.amount')}</label>
                 <input
                   type="text"
                   inputMode="decimal"
@@ -584,7 +605,7 @@ export function SuppliersPage() {
               <div>
                 <label className="text-xs text-slate-400 block mb-1">{t('admin.common.note')}</label>
                 <textarea
-                  placeholder={t('admin.inventory.noteOptional', 'Optional note...')}
+                  placeholder={t('admin.inventory.noteOptional')}
                   value={paymentNote}
                   onChange={(e) => setPaymentNote(e.target.value)}
                   className="touch-btn w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100"
@@ -620,8 +641,8 @@ export function SuppliersPage() {
       {/* Delete Confirmation Modal */}
       {deleteConfirm && (
         <ConfirmModal
-          title={t('admin.suppliers.deleteSupplier', 'Delete Supplier')}
-          message={t('admin.suppliers.deleteSupplierConfirm', 'Are you sure you want to delete this supplier?')}
+          title={t('admin.suppliers.deleteSupplier')}
+          message={t('admin.suppliers.deleteSupplierConfirm')}
           cancelText={t('admin.common.cancel')}
           confirmText={t('admin.common.delete')}
           isDangerous

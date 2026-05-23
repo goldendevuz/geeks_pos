@@ -4,6 +4,7 @@ import type { BulkGridCell, Category, LabelStickerSize, Product, Variant, StoreS
 import { useTranslation } from 'react-i18next'
 import { formatMoney } from '../utils/money'
 import { NumericNumpadField } from '../components/NumericNumpadField'
+import { TouchNumpad } from '../components/TouchNumpad'
 import { ActionToast } from '../components/ActionToast'
 import { Pencil, Printer, Power, Trash2, PackagePlus, ScanBarcode } from 'lucide-react'
 
@@ -123,7 +124,7 @@ export function CatalogPage({
     }
   })
   const [queueMap, setQueueMap] = useState<Record<string, number>>({})
-  const addToPrintQueue = true
+  const [addToPrintQueue, setAddToPrintQueue] = useState(true)
   const [bulkStickerPrompt, setBulkStickerPrompt] = useState<null | { variantIds: string[]; copiesStr: string }>(null)
   const [bulkStickerBusy, setBulkStickerBusy] = useState(false)
   const [printAllBusy, setPrintAllBusy] = useState(false)
@@ -131,12 +132,14 @@ export function CatalogPage({
   const [confirmDeleteCategoryId, setConfirmDeleteCategoryId] = useState<string | null>(null)
   const [confirmDeleteProductId, setConfirmDeleteProductId] = useState<string | null>(null)
   const [wizardOpen, setWizardOpen] = useState(false)
-  const [applianceOpen, setApplianceOpen] = useState(false)
-  const [apPurchase, setApPurchase] = useState('0')
-  const [apList, setApList] = useState('')
-  const [apQty, setApQty] = useState('0')
-  const [apBarcode, setApBarcode] = useState('')
+  const [wizardStep, setWizardStep] = useState(1)
   const [apCustomName, setApCustomName] = useState('')
+  const [selectedColor, setSelectedColor] = useState('')
+  const [defaultPurchase, setDefaultPurchase] = useState('0')
+  const [defaultList, setDefaultList] = useState('0')
+  const [defaultQty, setDefaultQty] = useState('1')
+  const [matrixCells, setMatrixCells] = useState<Record<string, { purchase: string; list: string; qty: string }>>({})
+  const [numpadOpen, setNumpadOpen] = useState<null | { field: 'purchase' | 'list' | 'qty'; cellId: string }>(null)
   const [lowStockModalOpen, setLowStockModalOpen] = useState(false)
   const [lowStockFilterBrand, setLowStockFilterBrand] = useState('')
 
@@ -186,59 +189,150 @@ export function CatalogPage({
     return (v || '').replace(/\D/g, '')
   }
 
-  async function submitApplianceVariant() {
+  function wizardNext() {
+    if (wizardStep === 1) {
+      if (!selectedModel && !form.product) {
+        setToast(t('admin.catalog.wizard.selectModelFirst'))
+        return
+      }
+      setWizardStep(2)
+    } else if (wizardStep === 2) {
+      setWizardStep(3)
+    }
+  }
+
+  function openMatrixNumpad(field: 'purchase' | 'list' | 'qty', cellId: string) {
+    setNumpadOpen({ field, cellId })
+  }
+
+  function matrixNumpadBaseline(): string {
+    if (!numpadOpen) return '0'
+    const { field, cellId } = numpadOpen
+    if (cellId === 'all') {
+      if (field === 'qty') return defaultQty
+      if (field === 'purchase') return defaultPurchase
+      return defaultList
+    }
+    const cell = matrixCells[cellId]
+    if (!cell) return '0'
+    if (field === 'qty') return cell.qty
+    if (field === 'purchase') return cell.purchase
+    return cell.list
+  }
+
+  function numpadValue(): string {
+    if (!numpadOpen) return '0'
+    const { field, cellId } = numpadOpen
+    if (cellId === 'all') {
+      if (field === 'qty') return defaultQty
+      if (field === 'purchase') return defaultPurchase
+      return defaultList
+    }
+    const cell = matrixCells[cellId] || { purchase: '0', list: '0', qty: '0' }
+    if (field === 'qty') return cell.qty
+    if (field === 'purchase') return cell.purchase
+    return cell.list
+  }
+
+  function onNumpadChange(next: string) {
+    if (!numpadOpen) return
+    const { field, cellId } = numpadOpen
+    if (cellId === 'all') {
+      if (field === 'qty') {
+        setDefaultQty(next)
+        setMatrixCells((prev) => {
+          const updated = { ...prev }
+          Object.keys(updated).forEach((k) => {
+            updated[k] = { ...updated[k], qty: next }
+          })
+          return updated
+        })
+      } else if (field === 'purchase') {
+        setDefaultPurchase(next)
+        setMatrixCells((prev) => {
+          const updated = { ...prev }
+          Object.keys(updated).forEach((k) => {
+            updated[k] = { ...updated[k], purchase: next }
+          })
+          return updated
+        })
+      } else {
+        setDefaultList(next)
+        setMatrixCells((prev) => {
+          const updated = { ...prev }
+          Object.keys(updated).forEach((k) => {
+            updated[k] = { ...updated[k], list: next }
+          })
+          return updated
+        })
+      }
+    } else {
+      setMatrixCells((prev) => ({
+        ...prev,
+        [cellId]: {
+          ...(prev[cellId] || { purchase: '0', list: '0', qty: '0' }),
+          [field]: next,
+        },
+      }))
+    }
+  }
+
+  function matrixNumpadDisplay(field: 'purchase' | 'list' | 'qty', value: string): string {
+    if (field === 'qty') return digitsOnly(value) || '0'
+    return formatMoney(digitsOnly(value) || '0')
+  }
+
+  async function submitBulkVariant() {
     const productId = selectedModel || form.product
     if (!productId) {
-      setToast('Select a product first')
+      setToast(t('admin.catalog.wizard.selectModelFirst'))
       return
     }
-    const purchaseInt = digitsOnly(apPurchase) || '0'
-    if (Number(purchaseInt) <= 0) {
-      setToast('Purchase price is required')
-      return
-    }
-    const qty = Math.max(0, Math.floor(Number(digitsOnly(apQty)) || 0))
-    const listInt = apList ? digitsOnly(apList) : ''
 
-    const matrix: BulkGridCell[] = [
-      {
-        purchase_price: purchaseInt,
-        list_price: listInt || undefined,
-        initial_qty: qty,
-        barcode: apBarcode.trim() || undefined,
-      },
-    ]
+    const matrix: BulkGridCell[] = []
+    const singleCell = matrixCells['single'] || { purchase: defaultPurchase, list: defaultList, qty: defaultQty }
+    
+    const purchaseInt = digitsOnly(singleCell.purchase) || '0'
+    if (Number(purchaseInt) <= 0) {
+      setToast(t('admin.catalog.wizard.purchasePriceRequired'))
+      return
+    }
+
+    matrix.push({
+      purchase_price: purchaseInt,
+      list_price: singleCell.list ? digitsOnly(singleCell.list) : undefined,
+      initial_qty: Math.max(0, Math.floor(Number(digitsOnly(singleCell.qty)) || 0)),
+    })
 
     setBusy(true)
     try {
-      // Create the variant
       const created = await onCreateVariantBulk({ product_id: productId, matrix })
       
-      // Update product with custom name if provided
+      // Update product with custom name and color if provided
+      const updatePayload: { custom_name_uz?: string; custom_name_ru?: string; color?: string } = {}
       if (apCustomName.trim()) {
-        await onUpdateProduct(productId, {
-          custom_name_uz: apCustomName.trim(),
-          custom_name_ru: apCustomName.trim(),
-        })
+        updatePayload.custom_name_uz = apCustomName.trim()
+        updatePayload.custom_name_ru = apCustomName.trim()
+      }
+      if (selectedColor) {
+        updatePayload.color = selectedColor
+      }
+      if (Object.keys(updatePayload).length > 0) {
+        await onUpdateProduct(productId, updatePayload)
       }
       
       setToast(t('admin.catalog.wizard.bulkSuccess'))
       if (addToPrintQueue && created.length > 0) {
         setBulkStickerPrompt({ variantIds: created.map((row) => row.id), copiesStr: '1' })
       }
-      setForm((p: WizardVariantForm) => ({
-        ...p,
-        product: productId,
-        purchase_price: '0',
-        list_price: '0',
-        stock_qty: 0,
-      }))
-      setApPurchase('0')
-      setApList('')
-      setApQty('0')
-      setApBarcode('')
+      
+      setWizardStep(1)
+      setMatrixCells({})
+      setDefaultPurchase('0')
+      setDefaultList('0')
+      setDefaultQty('1')
       setApCustomName('')
-      setApplianceOpen(false)
+      setSelectedColor('')
     } catch {
       setToast(t('admin.catalog.wizard.bulkError'))
     } finally {
@@ -484,46 +578,51 @@ export function CatalogPage({
         <div className="w-full flex items-center justify-between gap-2">
           <div className="text-sm font-medium text-slate-200 inline-flex items-center gap-2">
             <PackagePlus className="h-5 w-5 text-emerald-400 shrink-0" aria-hidden />
-            {t('admin.catalog.wizard.applianceTitle')}
+            {t('admin.catalog.wizard.title')}
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="touch-btn min-h-14 px-4 rounded-xl bg-amber-700 border border-amber-500 text-sm"
-              onClick={() => setWizardOpen((p) => !p)}
-            >
-              {wizardOpen ? t('admin.catalog.wizard.closeApplianceForm') : t('admin.catalog.wizard.addApplianceVariant')}
-            </button>
-          </div>
+          <button
+            type="button"
+            className="touch-btn min-h-14 px-5 rounded-xl bg-emerald-700 border border-emerald-500 font-semibold shrink-0 inline-flex items-center justify-center gap-2"
+            onClick={() => {
+              setWizardOpen((p) => !p)
+              if (!wizardOpen) setWizardStep(1)
+            }}
+          >
+            <PackagePlus className="h-5 w-5" aria-hidden />
+            {wizardOpen ? t('admin.catalog.wizard.close') : t('admin.catalog.wizard.addProductCta')}
+          </button>
         </div>
 
-        {wizardOpen && (
-          <div className="space-y-3">
+        {wizardOpen && wizardStep === 1 && (
+          <div className="space-y-4">
             <div className="text-base text-slate-100">{t('admin.catalog.wizard.step1Title')}</div>
             <div className="grid md:grid-cols-2 gap-3">
-              <select
-                className="touch-btn min-h-14 px-4 rounded-xl bg-slate-950 border border-slate-700 text-base"
-                value={selectedBrand}
-                onChange={(e) => {
-                  setSelectedBrand(e.target.value)
-                  setSelectedModel('')
-                }}
-              >
-                <option value="">{t('admin.catalog.brand')}</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name_uz}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                disabled={!selectedBrand || busy}
-                className="touch-btn min-h-14 px-4 rounded-xl bg-red-900 border border-red-700 disabled:opacity-40"
-                onClick={() => setConfirmDeleteCategoryId(selectedBrand)}
-              >
-                {t('admin.catalog.deleteBrand')}
-              </button>
+              <div className="flex gap-2">
+                <select
+                  className="touch-btn min-h-14 flex-1 px-4 rounded-xl bg-slate-950 border border-slate-700 text-base"
+                  value={selectedBrand}
+                  onChange={(e) => {
+                    setSelectedBrand(e.target.value)
+                    setSelectedModel('')
+                  }}
+                >
+                  <option value="">{t('admin.catalog.brand')}</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name_uz}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  disabled={!selectedBrand || busy}
+                  className="touch-btn min-h-14 px-3 rounded-xl bg-red-800/80 border border-red-600 disabled:opacity-40 shrink-0 text-sm"
+                  onClick={() => setConfirmDeleteCategoryId(selectedBrand)}
+                  title={t('admin.catalog.deleteBrand')}
+                >
+                  {t('admin.catalog.deleteBrandShort')}
+                </button>
+              </div>
               <div className="flex gap-2">
                 <input
                   className="touch-btn min-h-14 flex-1 px-4 rounded-xl bg-slate-950 border border-slate-700 text-base"
@@ -540,7 +639,7 @@ export function CatalogPage({
                   {t('admin.catalog.addBrand')}
                 </button>
               </div>
-              <div className="flex flex-col sm:flex-row gap-2 md:col-span-2">
+              <div className="flex gap-2">
                 <select
                   className="touch-btn min-h-14 flex-1 px-4 rounded-xl bg-slate-950 border border-slate-700 text-base"
                   value={selectedModel}
@@ -551,34 +650,23 @@ export function CatalogPage({
                   disabled={!selectedBrand}
                 >
                   <option value="">{t('admin.catalog.model')}</option>
-                  {modelOptions.map((p) => {
-                    const brandName = categories.find(c => c.id === p.category)?.name_uz || ''
-                    return (
-                      <option key={p.id} value={p.id}>
-                        {brandName && `${brandName} - `}{p.name_uz}
-                      </option>
-                    )
-                  })}
+                  {modelOptions.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name_uz}
+                    </option>
+                  ))}
                 </select>
-                <div className="ml-2">
-                  <button
-                    type="button"
-                    className="touch-btn min-h-14 px-4 rounded-xl bg-amber-700 border border-amber-500 text-sm"
-                    onClick={() => setApplianceOpen((p) => !p)}
-                  >
-                    {applianceOpen ? t('admin.catalog.wizard.closeApplianceForm') : t('admin.catalog.wizard.addApplianceVariant')}
-                  </button>
-                </div>
                 <button
                   type="button"
                   disabled={!(selectedModel || form.product) || busy}
-                  className="touch-btn min-h-14 px-4 rounded-xl bg-red-900 border border-red-700 disabled:opacity-40 shrink-0"
+                  className="touch-btn min-h-14 px-3 rounded-xl bg-red-800/80 border border-red-600 disabled:opacity-40 shrink-0 text-sm"
                   onClick={() => setConfirmDeleteProductId(selectedModel || form.product)}
+                  title={t('admin.catalog.deleteModel')}
                 >
-                  {t('admin.catalog.deleteModel')}
+                  {t('admin.catalog.deleteModelShort')}
                 </button>
               </div>
-              <div className="flex gap-2 md:col-span-2">
+              <div className="flex gap-2">
                 <input
                   className="touch-btn min-h-14 flex-1 px-4 rounded-xl bg-slate-950 border border-slate-700 text-base"
                   value={newModel}
@@ -595,96 +683,166 @@ export function CatalogPage({
                 </button>
               </div>
             </div>
-            {applianceOpen && (
-              <div className="p-3 rounded-xl border border-slate-800 bg-slate-950 mt-3 space-y-2">
-                <div className="text-sm text-slate-300">{t('admin.catalog.wizard.applianceFormTitle')}</div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs text-slate-400">{t('admin.catalog.customName', { defaultValue: 'Custom Name (optional)' })}</label>
-                    <input 
-                      type="text"
-                      className="touch-btn px-3 py-2 rounded-xl bg-slate-900 border border-slate-700" 
-                      value={apCustomName} 
-                      onChange={(e) => setApCustomName(e.target.value)} 
-                      placeholder={t('admin.catalog.customNamePlaceholder', { defaultValue: 'e.g. Samsung Refrigerator 330L' })} 
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs text-slate-400">{t('admin.catalog.purchase', 'Purchase Price')}</label>
-                    <input 
-                      type="text"
-                      inputMode="decimal"
-                      className="touch-btn px-3 py-2 rounded-xl bg-slate-900 border border-slate-700" 
-                      value={apPurchase} 
-                      onChange={(e) => setApPurchase(e.target.value)} 
-                      placeholder={t('admin.catalog.purchasePricePlaceholder', 'e.g. 100000')} 
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs text-slate-400">{t('admin.catalog.price', 'Selling Price')}</label>
-                    <input 
-                      type="text"
-                      inputMode="decimal"
-                      className="touch-btn px-3 py-2 rounded-xl bg-slate-900 border border-slate-700" 
-                      value={apList} 
-                      onChange={(e) => setApList(e.target.value)} 
-                      placeholder={t('admin.catalog.listPricePlaceholder', 'e.g. 150000 (optional)')} 
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs text-slate-400">{t('admin.catalog.initialQty', 'Initial Stock')}</label>
-                    <input 
-                      type="text"
-                      inputMode="numeric"
-                      className="touch-btn px-3 py-2 rounded-xl bg-slate-900 border border-slate-700" 
-                      value={apQty} 
-                      onChange={(e) => setApQty(e.target.value)} 
-                      placeholder={t('admin.catalog.initialQtyPlaceholder', 'e.g. 10')} 
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs text-slate-400">{t('admin.catalog.barcode', 'Barcode')}</label>
-                    <input 
-                      type="text"
-                      inputMode="text"
-                      className="touch-btn px-3 py-2 rounded-xl bg-slate-900 border border-slate-700" 
-                      value={apBarcode} 
-                      onChange={(e) => setApBarcode(e.target.value)} 
-                      placeholder={t('admin.catalog.barcodePlaceholder', 'e.g. 1234567890123')} 
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-end pt-2">
-                  <button type="button" disabled={busy} className="touch-btn px-4 py-2 rounded-xl bg-emerald-700" onClick={() => void submitApplianceVariant()}>
-                    {busy ? t('admin.common.loading') : t('admin.catalog.wizard.createApplianceVariant')}
-                  </button>
-                </div>
-              </div>
-            )}
-            {/* Appliance flow — matrix wizard removed; use appliance form above */}
+            <div className="flex flex-wrap justify-end gap-3 pt-2">
+              <button
+                type="button"
+                className="touch-btn min-h-14 px-6 rounded-xl bg-emerald-700 border border-emerald-500 font-semibold"
+                onClick={() => void wizardNext()}
+              >
+                {t('admin.catalog.wizard.next')}
+              </button>
+            </div>
           </div>
         )}
 
+        {wizardOpen && wizardStep === 2 && (
+          <div className="space-y-4">
+            <div className="text-base text-slate-100">{t('admin.catalog.wizard.step2Title')}</div>
+            <p className="text-sm text-slate-400">{t('admin.catalog.wizard.step2Hint')}</p>
+            
+            <div>
+              <div className="text-sm text-slate-400 mb-2">{t('admin.catalog.customName')}</div>
+              <input
+                type="text"
+                className="touch-btn w-full min-h-14 px-4 rounded-xl bg-slate-950 border border-slate-700 text-base"
+                value={apCustomName}
+                onChange={(e) => setApCustomName(e.target.value)}
+                placeholder={t('admin.catalog.customNamePlaceholder')}
+              />
+            </div>
 
+            <div>
+              <div className="text-sm text-slate-400 mb-2">{t('admin.catalog.color')}</div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                {[
+                  { value: '', label: t('admin.catalog.noColor'), bg: 'bg-slate-800', border: 'border-slate-600' },
+                  { value: 'white', label: t('admin.catalog.colors.white'), bg: 'bg-white', border: 'border-gray-300', textColor: 'text-gray-900' },
+                  { value: 'black', label: t('admin.catalog.colors.black'), bg: 'bg-black', border: 'border-gray-700' },
+                  { value: 'silver', label: t('admin.catalog.colors.silver'), bg: 'bg-gray-300', border: 'border-gray-400', textColor: 'text-gray-900' },
+                  { value: 'gray', label: t('admin.catalog.colors.gray'), bg: 'bg-gray-500', border: 'border-gray-600' },
+                  { value: 'red', label: t('admin.catalog.colors.red'), bg: 'bg-red-600', border: 'border-red-700' },
+                  { value: 'blue', label: t('admin.catalog.colors.blue'), bg: 'bg-blue-600', border: 'border-blue-700' },
+                  { value: 'gold', label: t('admin.catalog.colors.gold'), bg: 'bg-yellow-500', border: 'border-yellow-600', textColor: 'text-gray-900' },
+                  { value: 'green', label: t('admin.catalog.colors.green'), bg: 'bg-green-600', border: 'border-green-700' },
+                  { value: 'yellow', label: t('admin.catalog.colors.yellow'), bg: 'bg-yellow-400', border: 'border-yellow-500', textColor: 'text-gray-900' },
+                  { value: 'orange', label: t('admin.catalog.colors.orange'), bg: 'bg-orange-500', border: 'border-orange-600' },
+                  { value: 'purple', label: t('admin.catalog.colors.purple'), bg: 'bg-purple-600', border: 'border-purple-700' },
+                  { value: 'pink', label: t('admin.catalog.colors.pink'), bg: 'bg-pink-500', border: 'border-pink-600' },
+                  { value: 'brown', label: t('admin.catalog.colors.brown'), bg: 'bg-amber-800', border: 'border-amber-900' },
+                  { value: 'beige', label: t('admin.catalog.colors.beige'), bg: 'bg-amber-100', border: 'border-amber-200', textColor: 'text-gray-900' },
+                  { value: 'navy', label: t('admin.catalog.colors.navy'), bg: 'bg-blue-900', border: 'border-blue-950' },
+                ].map((c) => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    className={`touch-btn min-h-14 rounded-xl border-2 text-sm font-medium px-3 flex items-center justify-center gap-2 ${
+                      selectedColor === c.value
+                        ? 'ring-2 ring-emerald-500 ring-offset-2 ring-offset-slate-900'
+                        : ''
+                    } ${c.bg} ${c.border} ${c.textColor || 'text-white'}`}
+                    onClick={() => setSelectedColor(c.value)}
+                  >
+                    <span className={`w-4 h-4 rounded-full ${c.bg} border ${c.border}`}></span>
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap justify-between gap-3 pt-2">
+              <button
+                type="button"
+                className="touch-btn min-h-14 px-6 rounded-xl bg-slate-800 border border-slate-600"
+                onClick={() => setWizardStep(1)}
+              >
+                {t('admin.catalog.wizard.back')}
+              </button>
+              <button
+                type="button"
+                className="touch-btn min-h-14 px-6 rounded-xl bg-emerald-700 border border-emerald-500 font-semibold"
+                onClick={() => void wizardNext()}
+              >
+                {t('admin.catalog.wizard.next')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {wizardOpen && wizardStep === 3 && (
+          <div className="space-y-4">
+            <div className="text-base text-slate-100">{t('admin.catalog.wizard.step3Title')}</div>
+            <p className="text-sm text-slate-400">{t('admin.catalog.wizard.step3Hint')}</p>
+            <div className="rounded-xl border border-slate-800 bg-slate-950 p-3 space-y-3">
+              <div className="grid sm:grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  className="touch-btn min-h-12 rounded-xl border border-slate-700 bg-slate-900 px-3 text-left"
+                  onClick={() => openMatrixNumpad('purchase', 'single')}
+                >
+                  <div className="text-xs text-slate-500">{t('admin.catalog.wizard.defaultCost')}</div>
+                  <div className="text-lg font-semibold tabular-nums">{formatMoney(digitsOnly(matrixCells['single']?.purchase || defaultPurchase))}</div>
+                </button>
+                <button
+                  type="button"
+                  className="touch-btn min-h-12 rounded-xl border border-slate-700 bg-slate-900 px-3 text-left"
+                  onClick={() => openMatrixNumpad('list', 'single')}
+                >
+                  <div className="text-xs text-slate-500">{t('admin.catalog.wizard.defaultSale')}</div>
+                  <div className="text-lg font-semibold tabular-nums">{formatMoney(digitsOnly(matrixCells['single']?.list || defaultList))}</div>
+                </button>
+                <button
+                  type="button"
+                  className="touch-btn min-h-12 rounded-xl border border-slate-700 bg-slate-900 px-3 text-left"
+                  onClick={() => openMatrixNumpad('qty', 'single')}
+                >
+                  <div className="text-xs text-slate-500">{t('admin.catalog.wizard.defaultQty')}</div>
+                  <div className="text-lg font-semibold tabular-nums">{digitsOnly(matrixCells['single']?.qty || defaultQty) || '0'}</div>
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-slate-500">{t('admin.catalog.barcodeAuto')}</p>
+            <label className="touch-btn inline-flex items-center gap-2 min-h-12 px-3 rounded-xl border border-slate-700 bg-slate-950 text-sm">
+              <input
+                type="checkbox"
+                checked={addToPrintQueue}
+                onChange={(e) => setAddToPrintQueue(e.target.checked)}
+              />
+              {t('admin.catalog.wizard.addToQueueAfterSave')}
+            </label>
+            <div className="flex flex-wrap justify-between gap-3 pt-2">
+              <button
+                type="button"
+                className="touch-btn min-h-14 px-6 rounded-xl bg-slate-800 border border-slate-600"
+                onClick={() => setWizardStep(2)}
+              >
+                {t('admin.catalog.wizard.back')}
+              </button>
+              <button
+                type="button"
+                disabled={busy || !(selectedModel || form.product)}
+                className="touch-btn min-h-14 px-6 rounded-xl bg-emerald-700 border border-emerald-500 font-semibold disabled:opacity-40"
+                onClick={() => void submitBulkVariant()}
+              >
+                {busy ? t('admin.common.saving') : t('admin.catalog.wizard.submitBulk')}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      <div className="rounded border border-slate-700 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-900 text-slate-400">
-            <tr>
-              <th className="text-left p-2">{t('admin.catalog.product')}</th>
-              <th className="text-left p-2">{t('admin.catalog.customName', { defaultValue: 'Custom Name' })}</th>
-              <th className="text-left p-2">{t('admin.catalog.barcode')}</th>
-              <th className="text-right p-2">{t('admin.catalog.stock')}</th>
-              <th className="text-right p-2">{t('admin.catalog.purchase')}</th>
-              <th className="text-right p-2">{t('admin.catalog.price')}</th>
-              <th className="text-right p-2">{t('admin.catalog.action')}</th>
-            </tr>
-          </thead>
-          {!useVirtualRows && (
-          <tbody>
+      <div className="rounded border border-slate-700 overflow-x-auto kiosk-scrollbar">
+        <div className="min-w-[80rem]">
+          <div className="grid grid-cols-[200px_180px_140px_120px_140px_140px_1fr] bg-slate-900 text-slate-400 text-sm border-b border-slate-800">
+            <div className="text-left p-2">{t('admin.catalog.product')}</div>
+            <div className="text-left p-2">{t('admin.catalog.customName')}</div>
+            <div className="text-left p-2">{t('admin.catalog.barcode')}</div>
+            <div className="text-right p-2">{t('admin.catalog.stock')}</div>
+            <div className="text-right p-2">{t('admin.catalog.purchase')}</div>
+            <div className="text-right p-2">{t('admin.catalog.price')}</div>
+            <div className="text-left p-2">{t('admin.catalog.action')}</div>
+          </div>
+        {!useVirtualRows && (
+          <div>
             {variants.map((v) => {
               const modelTotalStock = productStockTotals[v.product] || 0
               const isModelLow = modelTotalStock < lowStockThreshold
@@ -697,18 +855,25 @@ export function CatalogPage({
               const customName = i18n.language.startsWith('ru')
                 ? v.product_custom_name_ru
                 : v.product_custom_name_uz
+              const colorLabel = v.color ? t(`admin.catalog.colors.${v.color}`) : ''
               return (
-              <tr key={v.id} className={`border-t border-slate-800 ${catalogVariantRowClass(v)}`}>
-                <td className="p-2">
+              <div key={v.id} className={`grid grid-cols-[200px_180px_140px_120px_140px_140px_1fr] border-t border-slate-800 text-sm ${catalogVariantRowClass(v)}`}>
+                <div className="p-2">
                   <div>{categoryName}</div>
-                  {modelName && <div className="text-xs text-slate-400">{modelName}</div>}
-                </td>
-                <td className="p-2 text-slate-300">{customName || '-'}</td>
-                <td className="p-2">{v.barcode}</td>
-                <td className="p-2 text-right">
+                  {(modelName || colorLabel) && (
+                    <div className="text-xs text-slate-400">
+                      {modelName}
+                      {modelName && colorLabel && ' • '}
+                      {colorLabel}
+                    </div>
+                  )}
+                </div>
+                <div className="p-2 text-slate-300">{customName || '-'}</div>
+                <div className="p-2 font-mono text-xs">{v.barcode}</div>
+                <div className="p-2 text-right">
                   <button
                     type="button"
-                    className="touch-btn min-h-12 px-3 rounded bg-slate-800 border border-slate-600"
+                    className="touch-btn min-h-10 px-3 rounded bg-slate-800 border border-slate-600"
                     onClick={() => {
                       setQuickAdjust(v)
                       setQuickDelta(0)
@@ -726,34 +891,32 @@ export function CatalogPage({
                       defaultValue: `Model: ${modelTotalStock}`,
                     })}
                   </div>
-                </td>
-                <td className="p-2 text-right">{formatMoney(v.purchase_price)}</td>
-                <td className="p-2 text-right">
-                  {v.list_price ? formatMoney(v.list_price) : <span className="text-slate-500 text-xs">{t('admin.catalog.priceOptional', { defaultValue: 'Optional' })}</span>}
-                </td>
-                <td className="p-2 text-right">
-                  <div className="inline-flex gap-2">
+                </div>
+                <div className="p-2 text-right tabular-nums">{formatMoney(v.purchase_price)}</div>
+                <div className="p-2 text-right tabular-nums">{formatMoney(v.list_price)}</div>
+                <div className="p-2">
+                  <div className="flex gap-1 flex-nowrap overflow-x-auto">
                     <button
                       type="button"
-                      className="touch-btn min-h-12 px-3 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1"
+                      className="touch-btn min-h-10 px-2 py-1 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1 text-xs whitespace-nowrap shrink-0"
                       onClick={() => {
                         setEditing(v)
                         setEditPrice(v.list_price ?? '')
                         setEditPurchase(v.purchase_price)
                       }}
                     >
-                      <Pencil className="h-3.5 w-3.5" /> {t('admin.catalog.edit')}
+                      <Pencil className="h-3 w-3" /> {t('admin.catalog.edit')}
                     </button>
                     <button
                       type="button"
-                      className="touch-btn min-h-12 px-3 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1"
+                      className="touch-btn min-h-10 px-2 py-1 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1 text-xs whitespace-nowrap shrink-0"
                       onClick={() => void addToQueue(v.id)}
                     >
-                      <PackagePlus className="h-3.5 w-3.5" /> {t('admin.catalog.queueAdd')}
+                      <PackagePlus className="h-3 w-3" /> {t('admin.catalog.queueAdd')}
                     </button>
                     <button
                       type="button"
-                      className="touch-btn min-h-12 px-3 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1"
+                      className="touch-btn min-h-10 px-2 py-1 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1 text-xs whitespace-nowrap shrink-0"
                       onClick={async () => {
                         try {
                           await onPrintSticker(v.id, 1, queueSize)
@@ -768,11 +931,11 @@ export function CatalogPage({
                         }
                       }}
                     >
-                      <Printer className="h-3.5 w-3.5" /> {t('admin.catalog.printSticker')}
+                      <Printer className="h-3 w-3" /> {t('admin.catalog.printSticker')}
                     </button>
                     <button
                       type="button"
-                      className="touch-btn min-h-12 px-3 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1"
+                      className="touch-btn min-h-10 px-2 py-1 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1 text-xs whitespace-nowrap shrink-0"
                       onClick={async () => {
                         try {
                           await onToggleVariant(v)
@@ -783,33 +946,31 @@ export function CatalogPage({
                         }
                       }}
                     >
-                      <Power className="h-3.5 w-3.5" />
+                      <Power className="h-3 w-3" />
                       {v.is_active ? t('admin.catalog.deactivate') : t('admin.catalog.activate')}
                     </button>
                     <button
                       type="button"
-                      className="touch-btn min-h-12 px-3 rounded bg-red-900 border border-red-700 inline-flex items-center gap-1"
+                      className="touch-btn min-h-10 px-2 py-1 rounded bg-red-900 border border-red-700 inline-flex items-center gap-1 text-xs whitespace-nowrap shrink-0"
                       onClick={async () => {
                         setConfirmDeleteId(v.id)
                       }}
                     >
-                      <Trash2 className="h-3.5 w-3.5" /> {t('admin.catalog.delete')}
+                      <Trash2 className="h-3 w-3" /> {t('admin.catalog.delete')}
                     </button>
                   </div>
-                </td>
-              </tr>
+                </div>
+              </div>
               )
             })}
             {variants.length === 0 && (
-              <tr>
-                <td colSpan={6} className="p-8 text-center text-slate-400">
-                  <div className="text-slate-300 mb-1">{query ? t('admin.catalog.emptyFiltered') : t('admin.catalog.empty')}</div>
-                </td>
-              </tr>
+              <div className="p-8 text-center text-slate-400">
+                <div className="text-slate-300 mb-1">{query ? t('admin.catalog.emptyFiltered') : t('admin.catalog.empty')}</div>
+              </div>
             )}
-          </tbody>
+          </div>
           )}
-        </table>
+        </div>
         {useVirtualRows && (
           <List
             defaultHeight={Math.min(620, Math.max(260, variants.length * 74))}
@@ -820,23 +981,34 @@ export function CatalogPage({
               const v = rows[index]
               const modelTotalStock = productStockTotals[v.product] || 0
               const isModelLow = modelTotalStock < lowStockThreshold
+              const categoryName = i18n.language.startsWith('ru')
+                ? v.category_name_ru
+                : v.category_name_uz
+              const modelName = i18n.language.startsWith('ru')
+                ? v.product_name_ru
+                : v.product_name_uz
+              const customName = i18n.language.startsWith('ru')
+                ? v.product_custom_name_ru
+                : v.product_custom_name_uz
+              const colorLabel = v.color ? t(`admin.catalog.colors.${v.color}`) : ''
               return (
                 <div
                   style={style}
-                  className={`grid grid-cols-[1.3fr_1.2fr_1fr_0.8fr_0.7fr_2fr] items-center border-b border-slate-800 px-2 text-sm ${catalogVariantRowClass(v)}`}
+                  className={`grid grid-cols-[200px_180px_140px_120px_140px_140px_1fr] items-start border-b border-slate-800 text-sm ${catalogVariantRowClass(v)}`}
                 >
-                  <div>
-                    {i18n.language.startsWith('ru')
-                      ? v.category_name_ru
-                      : v.category_name_uz}
+                  <div className="p-2">
+                    <div>{categoryName}</div>
+                    {(modelName || colorLabel) && (
+                      <div className="text-[11px] text-slate-400">
+                        {modelName}
+                        {modelName && colorLabel && ' • '}
+                        {colorLabel}
+                      </div>
+                    )}
                   </div>
-                  <div className="text-slate-300">
-                    {i18n.language.startsWith('ru')
-                      ? v.product_custom_name_ru || '-'
-                      : v.product_custom_name_uz || '-'}
-                  </div>
-                  <div>{v.barcode}</div>
-                  <div className="text-right">
+                  <div className="p-2 text-slate-300">{customName || '-'}</div>
+                  <div className="p-2 font-mono text-xs">{v.barcode}</div>
+                  <div className="p-2 text-right">
                     <div>{v.stock_qty}</div>
                     <div
                       className={`text-[11px] ${
@@ -849,30 +1021,31 @@ export function CatalogPage({
                       })}
                     </div>
                   </div>
-                  <div className="text-right">{formatMoney(v.list_price)}</div>
-                  <div className="text-right">
-                    <div className="inline-flex gap-2">
+                  <div className="p-2 text-right tabular-nums">{formatMoney(v.purchase_price)}</div>
+                  <div className="p-2 text-right tabular-nums">{formatMoney(v.list_price)}</div>
+                  <div className="p-2">
+                    <div className="flex gap-1 flex-nowrap overflow-x-auto">
                       <button
                         type="button"
-                        className="touch-btn min-h-10 px-2 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1"
+                        className="touch-btn min-h-10 px-2 py-1 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1 text-xs whitespace-nowrap shrink-0"
                         onClick={() => {
                           setEditing(v)
                           setEditPrice(v.list_price ?? '')
                           setEditPurchase(v.purchase_price)
                         }}
                       >
-                        <Pencil className="h-3.5 w-3.5" />
+                        <Pencil className="h-3 w-3" /> {t('admin.catalog.edit')}
                       </button>
                       <button
                         type="button"
-                        className="touch-btn min-h-10 px-2 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1"
+                        className="touch-btn min-h-10 px-2 py-1 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1 text-xs whitespace-nowrap shrink-0"
                         onClick={() => void addToQueue(v.id)}
                       >
-                        <PackagePlus className="h-3.5 w-3.5" />
+                        <PackagePlus className="h-3 w-3" /> {t('admin.catalog.queueAdd')}
                       </button>
                       <button
                         type="button"
-                        className="touch-btn min-h-10 px-2 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1"
+                        className="touch-btn min-h-10 px-2 py-1 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1 text-xs whitespace-nowrap shrink-0"
                         onClick={async () => {
                           try {
                             await onPrintSticker(v.id, 1, queueSize)
@@ -883,11 +1056,11 @@ export function CatalogPage({
                           }
                         }}
                       >
-                        <Printer className="h-3.5 w-3.5" />
+                        <Printer className="h-3 w-3" /> {t('admin.catalog.printSticker')}
                       </button>
                       <button
                         type="button"
-                        className="touch-btn min-h-10 px-2 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1"
+                        className="touch-btn min-h-10 px-2 py-1 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1 text-xs whitespace-nowrap shrink-0"
                         onClick={async () => {
                           try {
                             await onToggleVariant(v)
@@ -898,14 +1071,15 @@ export function CatalogPage({
                           }
                         }}
                       >
-                        <Power className="h-3.5 w-3.5" />
+                        <Power className="h-3 w-3" />
+                        {v.is_active ? t('admin.catalog.deactivate') : t('admin.catalog.activate')}
                       </button>
                       <button
                         type="button"
-                        className="touch-btn min-h-10 px-2 rounded bg-red-900 border border-red-700 inline-flex items-center gap-1"
+                        className="touch-btn min-h-10 px-2 py-1 rounded bg-red-900 border border-red-700 inline-flex items-center gap-1 text-xs whitespace-nowrap shrink-0"
                         onClick={() => setConfirmDeleteId(v.id)}
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-3 w-3" /> {t('admin.catalog.delete')}
                       </button>
                     </div>
                   </div>
@@ -1033,10 +1207,10 @@ export function CatalogPage({
               <table className="w-full text-sm">
                 <thead className="bg-slate-950 text-slate-400">
                   <tr>
-                    <th className="text-left p-2">{t('admin.catalog.product')}</th>
-                    <th className="text-left p-2">{t('admin.catalog.customName', { defaultValue: 'Custom Name' })}</th>
-                    <th className="text-left p-2">{t('admin.catalog.barcode')}</th>
-                    <th className="text-right p-2">{t('admin.catalog.copies')}</th>
+                    <th className="text-left p-3">{t('admin.catalog.product')}</th>
+                    <th className="text-left p-3">{t('admin.catalog.customName')}</th>
+                    <th className="text-left p-3">{t('admin.catalog.barcode')}</th>
+                    <th className="text-right p-3">{t('admin.catalog.copies')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1048,14 +1222,14 @@ export function CatalogPage({
                       : v.product_custom_name_uz
                     return (
                       <tr key={variantId} className="border-t border-slate-800">
-                        <td className="p-2">
+                        <td className="p-3">
                           {i18n.language.startsWith('ru')
                             ? v.product_name_ru || v.product_name_uz
                             : v.product_name_uz}
                         </td>
-                        <td className="p-2 text-slate-300">{customName || '-'}</td>
-                        <td className="p-2">{v.barcode}</td>
-                        <td className="p-2 text-right">
+                        <td className="p-3 text-slate-300">{customName || '-'}</td>
+                        <td className="p-3">{v.barcode}</td>
+                        <td className="p-3 text-right">
                           <div className="w-28 ml-auto">
                             <NumericNumpadField
                               value={String(copies)}
@@ -1170,6 +1344,51 @@ export function CatalogPage({
                     setToast(t(`err.${code || 'API_ERROR'}`))
                   }
                 }}
+              >
+                {t('admin.common.save')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {numpadOpen && (
+        <div
+          className="fixed inset-0 z-30 flex items-center justify-center overflow-y-auto overscroll-contain bg-black/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setNumpadOpen(null)}
+        >
+          <div
+            className="my-auto w-full max-w-sm max-h-[min(90dvh,90svh)] overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-4 space-y-3 shadow-xl kiosk-scrollbar"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="space-y-2">
+              <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{t('common.valueBefore')}</div>
+              <div className="w-full min-h-12 px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-600 text-right text-lg font-semibold tabular-nums text-slate-100">
+                {matrixNumpadDisplay(numpadOpen.field, matrixNumpadBaseline())}
+              </div>
+              <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{t('common.valueEditing')}</div>
+              <div className="w-full min-h-12 px-3 py-2.5 rounded-xl bg-slate-950 border border-emerald-700/50 ring-1 ring-emerald-500/30 text-right text-lg font-semibold tabular-nums text-emerald-100">
+                {matrixNumpadDisplay(numpadOpen.field, numpadValue())}
+              </div>
+            </div>
+            <TouchNumpad
+              className="rounded-xl border border-slate-800 bg-slate-950 p-3"
+              value={numpadValue()}
+              onChange={onNumpadChange}
+              label={
+                numpadOpen.field === 'qty'
+                  ? t('admin.catalog.wizard.defaultQty')
+                  : numpadOpen.field === 'purchase'
+                    ? t('admin.catalog.wizard.defaultCost')
+                    : t('admin.catalog.wizard.defaultSale')
+              }
+            />
+            <div className="flex justify-end">
+              <button
+                type="button"
+                className="touch-btn min-h-12 px-5 rounded-xl bg-emerald-700 border border-emerald-500 font-medium"
+                onClick={() => setNumpadOpen(null)}
               >
                 {t('admin.common.save')}
               </button>
@@ -1407,3 +1626,5 @@ export function CatalogPage({
     </div>
   )
 }
+
+

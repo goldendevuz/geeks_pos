@@ -176,7 +176,7 @@ async function bootstrap() {
       const message = e instanceof Error ? e.message : 'unknown'
       void appendUiLog('ERROR', `Boot failed: ${message}`)
       renderBoot(root, 'boot_failed', {
-        detail: `${message}. Qayta urining yoki logni tekshiring.`,
+        detail: i18n.t('boot.failedDetail', { message }),
         onRetry: () => {
           void retryBoot()
         },

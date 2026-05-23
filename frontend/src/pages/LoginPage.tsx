@@ -67,17 +67,28 @@ export function LoginPage({ onDone }: { onDone: () => void | Promise<void> }) {
               {t('app.title')}
             </h1>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
               className={`touch-btn text-sm px-4 py-2 rounded-xl border ${
-                i18n.language.startsWith('uz')
+                i18n.language === 'uz'
                   ? 'bg-emerald-700 border-emerald-500 text-white'
                   : 'bg-slate-700 border-slate-600 text-slate-200'
               }`}
               onClick={() => void loadLocale('uz')}
             >
               {t('lang.uz')}
+            </button>
+            <button
+              type="button"
+              className={`touch-btn text-sm px-4 py-2 rounded-xl border ${
+                i18n.language === 'uz-cyrl'
+                  ? 'bg-emerald-700 border-emerald-500 text-white'
+                  : 'bg-slate-700 border-slate-600 text-slate-200'
+              }`}
+              onClick={() => void loadLocale('uz-cyrl')}
+            >
+              {t('lang.uz-cyrl')}
             </button>
             <button
               type="button"
@@ -108,7 +119,7 @@ export function LoginPage({ onDone }: { onDone: () => void | Promise<void> }) {
               </p>
               <div className="text-xs text-amber-200 space-y-1">
                 <p>
-                  {t('license.demoExpires', { defaultValue: 'Demo tugash sanasi' })}: {licenseInfo.demo_expires_at || '-'}
+                  {t('license.demoExpires', { defaultValue: 'Demo tugash sanasi' })}: {licenseInfo.demo_expires_at || ''}
                 </p>
                 <p className="break-all">
                   {t('license.hardwareIdLabel', { defaultValue: 'Hardware ID' })}: {hardwareId || t('admin.common.na')}

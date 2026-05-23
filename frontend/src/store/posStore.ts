@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import type { CartNameFields } from '../utils/posCartName'
+import { formatPosCartLineName } from '../utils/posCartName'
 
 export type CartLine = {
   variantId: string
@@ -7,6 +9,7 @@ export type CartLine = {
   colorId: string
   barcode: string
   name: string
+  nameFields?: CartNameFields
   sizeLabel: string
   colorLabel: string
   listPrice: string
@@ -39,6 +42,7 @@ type PosState = {
   updateLinePrice: (variantId: string, listPrice: string) => void
   updateLineStock: (variantId: string, stockQty: number) => void
   setCart: (items: CartLine[]) => void
+  refreshCartNames: (lang: string) => void
   holdCart: (payload: { items: CartLine[]; total: number; label?: string }) => SuspendedCart
   resumeCart: (id: string) => SuspendedCart | null
   deleteSuspendedCart: (id: string) => void
@@ -66,6 +70,8 @@ export const usePosStore = create<PosState>()(
                     qty: c.qty + add,
                     productId: c.productId || line.productId,
                     colorId: c.colorId || line.colorId,
+                    nameFields: line.nameFields ?? c.nameFields,
+                    name: line.name || c.name,
                   }
                 : c,
             ),
@@ -80,6 +86,7 @@ export const usePosStore = create<PosState>()(
                 colorId: line.colorId,
                 barcode: line.barcode,
                 name: line.name,
+                nameFields: line.nameFields,
                 sizeLabel: line.sizeLabel,
                 colorLabel: line.colorLabel,
                 listPrice: line.listPrice,
@@ -111,6 +118,15 @@ export const usePosStore = create<PosState>()(
           cart: get().cart.map((c) => (c.variantId === variantId ? { ...c, stockQty } : c)),
         }),
       setCart: (items) => set({ cart: items }),
+      refreshCartNames: (lang) => {
+        set({
+          cart: get().cart.map((c) =>
+            c.nameFields
+              ? { ...c, name: formatPosCartLineName(c.nameFields, lang) }
+              : c,
+          ),
+        })
+      },
       holdCart: ({ items, total, label }) => {
         const nextSeq = get().sessionSeq + 1
         const cartLabel = label || `Mijoz #${nextSeq}`

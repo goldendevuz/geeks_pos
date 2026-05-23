@@ -1165,6 +1165,7 @@ export function SettingsPage({
                 <thead className="bg-slate-900 text-slate-400">
                   <tr>
                     <th className="text-left p-2">{t('admin.catalog.product')}</th>
+                    <th className="text-left p-2">{t('admin.catalog.color')}</th>
                     <th className="text-left p-2">{t('admin.catalog.barcode')}</th>
                     <th className="text-right p-2">{t('admin.settings.expected')}</th>
                     <th className="text-right p-2">{t('admin.settings.counted')}</th>
@@ -1180,6 +1181,7 @@ export function SettingsPage({
                           ? (ln as typeof ln & { product_name_ru?: string }).product_name_ru || ln.product_name_uz
                           : ln.product_name_uz}
                       </td>
+                      <td className="p-2 text-slate-300">{ln.color || '-'}</td>
                       <td className="p-2">{ln.barcode}</td>
                       <td className="p-2 text-right">{ln.expected_qty}</td>
                       <td className="p-2 text-right">{ln.counted_qty ?? '-'}</td>

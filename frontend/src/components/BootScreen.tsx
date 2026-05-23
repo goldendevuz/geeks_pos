@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 export type BootStage =
   | 'boot_init'
   | 'runtime_check'
@@ -7,14 +9,14 @@ export type BootStage =
   | 'boot_failed'
   | 'app_loading'
 
-const stageText: Record<BootStage, string> = {
-  boot_init: 'Geeks POS yuklanmoqda...',
-  runtime_check: 'Tizim komponentlari tekshirilmoqda...',
-  backend_spawn: 'Backend ishga tushirilmoqda...',
-  backend_wait: 'Serverga ulanilmoqda...',
-  timeout_warn: 'Ishga tushish odatdagidan uzoq davom etmoqda...',
-  boot_failed: 'Backend ishga tushmadi.',
-  app_loading: 'Ilova yuklanmoqda...',
+const STAGE_KEYS: Record<BootStage, string> = {
+  boot_init: 'boot.init',
+  runtime_check: 'boot.runtimeCheck',
+  backend_spawn: 'boot.backendSpawn',
+  backend_wait: 'boot.backendWait',
+  timeout_warn: 'boot.timeoutWarn',
+  boot_failed: 'boot.failed',
+  app_loading: 'boot.appLoading',
 }
 
 export function BootScreen({
@@ -28,6 +30,7 @@ export function BootScreen({
   onRetry?: () => void
   onOpenLog?: () => void
 }) {
+  const { t } = useTranslation()
   const isFailed = stage === 'boot_failed'
   const isWarn = stage === 'timeout_warn'
 
@@ -37,11 +40,9 @@ export function BootScreen({
         {!isFailed && (
           <div className="mx-auto h-10 w-10 rounded-full border-4 border-slate-700 border-t-emerald-500 animate-spin" />
         )}
-        <div className="text-xl font-semibold">{stageText[stage]}</div>
-        <div className="text-sm text-slate-400">{detail || 'Iltimos kuting, tizim tayyorlanmoqda.'}</div>
-        {isWarn && (
-          <div className="text-xs text-amber-300">Server 5 soniyadan ko&apos;p kutilyapti. Qayta urinish mumkin.</div>
-        )}
+        <div className="text-xl font-semibold">{t(STAGE_KEYS[stage])}</div>
+        <div className="text-sm text-slate-400">{detail || t('boot.pleaseWait')}</div>
+        {isWarn && <div className="text-xs text-amber-300">{t('boot.timeoutHint')}</div>}
         {(isWarn || isFailed) && (onRetry || onOpenLog) && (
           <div className="flex flex-wrap justify-center gap-2 pt-2">
             {onRetry && (
@@ -50,7 +51,7 @@ export function BootScreen({
                 className="touch-btn min-h-12 px-4 rounded-xl bg-emerald-700 border border-emerald-500"
                 onClick={onRetry}
               >
-                {isWarn ? 'Server ishga tushmadi — qayta urinish' : 'Qayta urinish'}
+                {isWarn ? t('boot.retryServer') : t('admin.common.retry')}
               </button>
             )}
             {onOpenLog && (
@@ -59,7 +60,7 @@ export function BootScreen({
                 className="touch-btn min-h-12 px-4 rounded-xl bg-slate-800 border border-slate-600"
                 onClick={onOpenLog}
               >
-                Log manzili
+                {t('boot.openLog')}
               </button>
             )}
           </div>

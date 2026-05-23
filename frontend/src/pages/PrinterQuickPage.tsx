@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { HardwareConfig } from '../api'
 import { fetchHardwareConfig, patchHardwareConfig, testReceiptPrintPayload } from '../api'
 import { listInstalledPrinters } from '../utils/tauriPrint'
+import { isPrinterError, translatePrinterError } from '../utils/printerErrors'
 import { dispatchReceipt } from '../utils/printingHub'
 import { ActionToast } from '../components/ActionToast'
 
@@ -57,8 +58,8 @@ export function PrinterQuickPage() {
       setToast({ kind: 'ok', msg: t('msg.printSent') })
     } catch (e: unknown) {
       const raw = e instanceof Error ? e.message : String(e || '')
-      if (raw.startsWith('Printer ulanmagan:')) {
-        setToast({ kind: 'err', msg: raw })
+      if (isPrinterError(raw)) {
+        setToast({ kind: 'err', msg: translatePrinterError(raw) })
       } else {
         setToast({ kind: 'err', msg: t('msg.printFailed') })
       }

@@ -152,7 +152,7 @@ export function DebtsPage({
                               if (!/^\d{9,15}$/.test(editPhone.trim())) {
                                 setToast({
                                   kind: 'err',
-                                  message: "Telefon raqami davlat kodi bilan, '+'siz kiritilishi kerak (masalan: 998901112233).",
+                                  message: t('admin.debts.phoneFormat'),
                                 })
                                 return
                               }

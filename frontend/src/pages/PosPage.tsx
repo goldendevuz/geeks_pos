@@ -19,6 +19,14 @@ import {
 } from '../api'
 import { usePosStore, type PayMode, type SuspendedCart } from '../store/posStore'
 import { formatMoney } from '../utils/money'
+import { showSellPriceInCatalog } from '../utils/sellPriceVisibility'
+import { cartNameFieldsFromVariant, formatPosCartLineName } from '../utils/posCartName'
+import {
+  dateLocale,
+  pickCustomName,
+  pickProductName,
+} from '../utils/localizedName'
+import { isPrinterError, translatePrinterError } from '../utils/printerErrors'
 import { buildCompleteSaleFingerprintInput, hashSaleIdempotencyKey64 } from '../utils/saleFingerprint'
 import { printReceiptWithFallback } from '../utils/printingHub'
 import { requestAdminDataRefresh } from '../utils/adminDataRefresh'
@@ -159,6 +167,7 @@ export function PosPage({
   const [stockMatrix, setStockMatrix] = useState<null | StockMatrixOpen>(null)
   const [locked, setLocked] = useState(false)
   const [lockTimeoutMinutes, setLockTimeoutMinutes] = useState(5)
+  const [showSellInCatalog, setShowSellInCatalog] = useState(true)
   const [unlockPin, setUnlockPin] = useState('')
   const [unlockErr, setUnlockErr] = useState<string | null>(null)
   const [unlockBusy, setUnlockBusy] = useState(false)
@@ -172,6 +181,7 @@ export function PosPage({
   const customerName = usePosStore((s) => s.customerName)
   const customerPhone = usePosStore((s) => s.customerPhone)
   const addLine = usePosStore((s) => s.addLine)
+  const refreshCartNames = usePosStore((s) => s.refreshCartNames)
   const incQty = usePosStore((s) => s.incQty)
   const clearCart = usePosStore((s) => s.clearCart)
   const setPayMode = usePosStore((s) => s.setPayMode)
@@ -316,8 +326,10 @@ export function PosPage({
       let store: Awaited<ReturnType<typeof fetchStoreSettings>> | null = null
       try {
         store = await fetchStoreSettings()
+        setShowSellInCatalog(showSellPriceInCatalog(store))
       } catch {
         store = null
+        setShowSellInCatalog(true)
       }
       try {
         const cfg = await fetchHardwareConfig()
@@ -343,6 +355,10 @@ export function PosPage({
   }, [])
 
   useEffect(() => {
+    refreshCartNames(i18n.language)
+  }, [i18n.language, refreshCartNames])
+
+  useEffect(() => {
     if (locked) return
     const timeoutMs = Math.max(1, lockTimeoutMinutes) * 60 * 1000
     let timer = window.setTimeout(() => setLocked(true), timeoutMs)
@@ -366,7 +382,7 @@ export function PosPage({
 
   const lockDateLabel = useMemo(
     () =>
-      lockNow.toLocaleDateString(i18n.language.startsWith('ru') ? 'ru-RU' : 'uz-UZ', {
+      lockNow.toLocaleDateString(dateLocale(i18n.language), {
         weekday: 'long',
         year: 'numeric',
         month: 'long',
@@ -376,7 +392,7 @@ export function PosPage({
   )
   const lockTimeLabel = useMemo(
     () =>
-      lockNow.toLocaleTimeString(i18n.language.startsWith('ru') ? 'ru-RU' : 'uz-UZ', {
+      lockNow.toLocaleTimeString(dateLocale(i18n.language), {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
@@ -479,16 +495,17 @@ export function PosPage({
     if (cart.length === 0) return null
     const total = Number(grandDec.toString())
     const suspended = holdCart({ items: cart, total })
-    openNewCart(opts?.silent ? undefined : t('pos.newCartOpened', { defaultValue: 'Yangi savat ochildi' }))
+    openNewCart(opts?.silent ? undefined : t('pos.newCartOpened'))
     return suspended
   }
 
   function restoreSuspendedCart(session: SuspendedCart) {
     setCart(session.items)
+    refreshCartNames(i18n.language)
     resetCheckoutState()
     setPaymentRows([{ id: crypto.randomUUID(), method: 'CASH', amount: String(session.total || 0) }])
     setActivePayId(null)
-    showToast('ok', t('pos.cartResumed', { defaultValue: 'Navbatdagi savat tiklandi' }))
+    showToast('ok', t('pos.cartResumed'))
     safeRefocus()
   }
 
@@ -502,23 +519,20 @@ export function PosPage({
       if (result.kind === 'escpos') {
         showToast(
           'ok',
-          t('msg.printQueuedTo', {
-            printer: result.printer,
-            defaultValue: `Chek navbatga yuborildi: ${result.printer}`,
-          }),
+          t('msg.printQueuedTo', { printer: result.printer }),
           { muteSound: true },
         )
       } else {
         showToast(
           'ok',
-          t('msg.printQueuedPlain', { defaultValue: 'Chek matn rejimida navbatga yuborildi.' }),
+          t('msg.printQueuedPlain'),
           { muteSound: true },
         )
       }
     } catch (e: unknown) {
       const rawMessage = e instanceof Error ? e.message : String(e || '')
-      if (rawMessage.startsWith('Printer ulanmagan:')) {
-        setPrintBanner(rawMessage)
+      if (isPrinterError(rawMessage)) {
+        setPrintBanner(translatePrinterError(rawMessage))
       } else {
         setPrintBanner(t('msg.printFailed'))
       }
@@ -528,11 +542,11 @@ export function PosPage({
   }
 
   function addVariantToCart(v: PosVariant, opts?: { clearSearch?: boolean }) {
-    const brandName = i18n.language.startsWith('ru') ? v.category_name_ru : v.category_name_uz
-    const modelName = i18n.language.startsWith('ru') ? v.product_name_ru || v.product_name_uz : v.product_name_uz
+    const nameFields = cartNameFieldsFromVariant(v)
+    const displayName = formatPosCartLineName(nameFields, i18n.language)
     // If variant has no authoritative list price, prompt cashier for sale-time price.
     if (v.list_price == null) {
-      setPromptPriceVariant(v as any)
+      setPromptPriceVariant(v as PosVariant)
       setPromptPriceBuf('0')
       return
     }
@@ -542,7 +556,8 @@ export function PosPage({
       productId: v.product,
       colorId: '',
       barcode: v.barcode ?? '',
-      name: `${brandName} ${modelName}`.trim(),
+      name: displayName,
+      nameFields,
       sizeLabel: '',
       colorLabel: '',
       listPrice: String(v.list_price),
@@ -1090,7 +1105,7 @@ export function PosPage({
               role="listbox"
             >
               {searchResults.map((v) => {
-                const customName = i18n.language.startsWith('ru') ? v.product_custom_name_ru : v.product_custom_name_uz
+                const customName = pickCustomName(v, i18n.language)
                 return (
                 <li key={v.id}>
                   <button
@@ -1099,13 +1114,13 @@ export function PosPage({
                     onClick={() => addVariantToCart(v, { clearSearch: true })}
                   >
                     <div className="font-medium">
-                      {i18n.language.startsWith('ru')
-                        ? v.product_name_ru || v.product_name_uz
-                        : v.product_name_uz}
+                      {pickProductName(v, i18n.language)}
                     </div>
                     {customName && <div className="text-xs text-slate-300 italic">{customName}</div>}
                     <div className="text-xs text-slate-400">
-                      {formatMoney(String(v.list_price))} ·{' '}
+                      {showSellInCatalog && !v.hide_selling_price && v.list_price != null
+                        ? `${formatMoney(String(v.list_price))} · `
+                        : ''}
                       {t('admin.catalog.stock')}: {v.stock_qty}
                     </div>
                     {v.barcode ? <div className="text-xs text-slate-500 font-mono mt-0.5">{v.barcode}</div> : null}
@@ -1507,7 +1522,7 @@ export function PosPage({
       {promptPriceVariant && (
         <div className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto overscroll-contain bg-black/60 p-4">
           <div className="my-auto w-full max-w-md max-h-[min(90dvh,90svh)] overflow-y-auto rounded border border-slate-700 bg-slate-900 p-4 space-y-3 kiosk-scrollbar">
-            <h3 className="text-lg font-semibold">{i18n.language.startsWith('ru') ? promptPriceVariant.product_name_ru || promptPriceVariant.product_name_uz : promptPriceVariant.product_name_uz}</h3>
+            <h3 className="text-lg font-semibold">{pickProductName(promptPriceVariant, i18n.language)}</h3>
             <div className="text-sm text-slate-400">{t('pos.enterSalePrice')}</div>
             <div className="rounded-xl bg-slate-950 border border-slate-700 p-3 space-y-2">
               <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{t('common.valueEditing')}</div>
@@ -1523,12 +1538,14 @@ export function PosPage({
               <button type="button" className="touch-btn min-h-12 px-5 rounded-xl bg-emerald-700 border border-emerald-500" onClick={() => {
                 try {
                   const price = String(parseSom(promptPriceBuf))
+                  const nameFields = cartNameFieldsFromVariant(promptPriceVariant)
                   addLine({
                     variantId: promptPriceVariant.id,
                     productId: promptPriceVariant.product,
                     colorId: '',
                     barcode: promptPriceVariant.barcode ?? '',
-                    name: i18n.language.startsWith('ru') ? promptPriceVariant.product_name_ru || promptPriceVariant.product_name_uz : promptPriceVariant.product_name_uz,
+                    name: formatPosCartLineName(nameFields, i18n.language),
+                    nameFields,
                     sizeLabel: '',
                     colorLabel: '',
                     listPrice: price,
@@ -1585,7 +1602,9 @@ export function PosPage({
                     <tr>
                       <th className="text-left p-3">{t('pos.matrixSize')}</th>
                       <th className="text-right p-3">{t('pos.matrixStock')}</th>
-                      <th className="text-right p-3">{t('cart.sum')}</th>
+                      {showSellInCatalog && (
+                        <th className="text-right p-3">{t('cart.sum')}</th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
@@ -1593,19 +1612,23 @@ export function PosPage({
                       <tr key={r.id} className="border-t border-slate-800">
                         <td className="p-3">
                           <div className="font-medium">
-                            {i18n.language.startsWith('ru')
-                              ? r.product_name_ru || r.product_name_uz
-                              : r.product_name_uz}
+                            {pickProductName(r, i18n.language)}
                           </div>
                           {r.barcode ? <div className="text-xs text-slate-500 font-mono">{r.barcode}</div> : null}
                         </td>
                         <td className="p-3 text-right tabular-nums">{r.stock_qty}</td>
-                        <td className="p-3 text-right tabular-nums">{formatMoney(String(r.list_price))}</td>
+                        {showSellInCatalog && (
+                          <td className="p-3 text-right tabular-nums">
+                            {!r.hide_selling_price && r.list_price != null
+                              ? formatMoney(String(r.list_price))
+                              : ''}
+                          </td>
+                        )}
                       </tr>
                     ))}
                     {matrixRows.length === 0 && (
                       <tr>
-                        <td colSpan={3} className="p-6 text-center text-slate-500">
+                        <td colSpan={showSellInCatalog ? 3 : 2} className="p-6 text-center text-slate-500">
                           {t('pos.searchEmpty')}
                         </td>
                       </tr>
@@ -1624,13 +1647,24 @@ export function PosPage({
           <button
             type="button"
             className={`touch-btn text-sm px-4 py-2 rounded-xl border ${
-              i18n.language.startsWith('uz')
+              i18n.language === 'uz'
                 ? 'bg-emerald-700 border-emerald-500 text-white'
                 : 'bg-slate-800 border-slate-600 text-slate-200'
             }`}
             onClick={() => void loadLocale('uz')}
           >
             {t('lang.uz')}
+          </button>
+          <button
+            type="button"
+            className={`touch-btn text-sm px-4 py-2 rounded-xl border ${
+              i18n.language === 'uz-cyrl'
+                ? 'bg-emerald-700 border-emerald-500 text-white'
+                : 'bg-slate-800 border-slate-600 text-slate-200'
+            }`}
+            onClick={() => void loadLocale('uz-cyrl')}
+          >
+            {t('lang.uz-cyrl')}
           </button>
           <button
             type="button"

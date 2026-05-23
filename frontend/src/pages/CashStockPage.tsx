@@ -92,6 +92,7 @@ export function CashStockPage({ role }: { role: UserRole | null }) {
               <th className="text-left p-2">{t('admin.catalog.brand')}</th>
               <th className="text-left p-2">{t('admin.catalog.product')}</th>
               <th className="text-left p-2">{t('admin.catalog.customName', { defaultValue: 'Custom Name' })}</th>
+              <th className="text-left p-2">{t('admin.catalog.color')}</th>
               <th className="text-left p-2">{t('admin.catalog.barcode')}</th>
               <th className="text-right p-2">{t('admin.catalog.stock')}</th>
               {showPurchase && (
@@ -115,6 +116,7 @@ export function CashStockPage({ role }: { role: UserRole | null }) {
                     {langRu ? v.product_name_ru || v.product_name_uz : v.product_name_uz}
                   </td>
                   <td className="p-2 text-slate-300">{rowCustomName(v)}</td>
+                  <td className="p-2 text-slate-300">{v.color ? t(`admin.catalog.colors.${v.color}`, v.color) : '-'}</td>
                   <td className="p-2 font-mono text-xs">{v.barcode}</td>
                   <td className="p-2 text-right tabular-nums">{v.stock_qty}</td>
                   {showPurchase && (

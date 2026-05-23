@@ -16,5 +16,9 @@ class EscposRenderer:
         variant = label_payload["variant"]
         size = label_payload.get("size", "40x30")
         copies = int(label_payload.get("copies", 1) or 1)
-        show_price = label_payload.get("show_price", settings.show_price_on_labels_default if hasattr(settings, 'show_price_on_labels_default') else True)
-        return label_escpos_bytes(variant=variant, size=size, copies=copies, show_price=show_price)
+        return label_escpos_bytes(
+            variant=variant,
+            size=size,
+            copies=copies,
+            show_price=label_payload.get("show_price"),
+        )

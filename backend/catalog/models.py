@@ -27,6 +27,7 @@ class Product(models.Model):
     custom_name_uz = models.CharField(max_length=255, null=True, blank=True)
     custom_name_ru = models.CharField(max_length=255, null=True, blank=True)
     custom_name_uz_cyrillic = models.CharField(max_length=255, null=True, blank=True)
+    color = models.CharField(max_length=64, blank=True, default="")
     is_active = models.BooleanField(default=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

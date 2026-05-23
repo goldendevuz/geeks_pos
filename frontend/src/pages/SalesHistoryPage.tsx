@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { List, type RowComponentProps } from 'react-window'
 import { formatMoney, netMoney, toIntAmount } from '../utils/money'
+import { dateLocale as resolveDateLocale } from '../utils/localizedName'
+import { isPrinterError, translatePrinterError } from '../utils/printerErrors'
 import { ActionToast } from '../components/ActionToast'
 import { playUiSound } from '../utils/uiSound'
 
@@ -70,14 +72,14 @@ function SaleRowActions({
               setActionToast({ kind: 'ok', message: t('admin.sales.reprintSuccess') })
             } catch (e: unknown) {
               const rawMessage = e instanceof Error ? e.message : String(e || '')
-              if (rawMessage.startsWith('Printer ulanmagan:')) {
-                setActionToast({ kind: 'err', message: rawMessage })
+              if (isPrinterError(rawMessage)) {
+                setActionToast({ kind: 'err', message: translatePrinterError(rawMessage) })
                 return
               }
               const code = (e as Error & { code?: string }).code
               setActionToast({
                 kind: 'err',
-                message: t(`err.${code || 'PRINT_FAILED'}`, { defaultValue: t('msg.printFailed') }),
+                message: t(`err.${code || 'PRINT_FAILED'}`),
               })
             }
           }}
@@ -127,7 +129,7 @@ export function SalesHistoryPage({
   isCashier?: boolean
 }) {
   const { t, i18n } = useTranslation()
-  const dateLocale = i18n.language.startsWith('ru') ? 'ru-RU' : 'uz-UZ'
+  const dateLocaleStr = resolveDateLocale(i18n.language)
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [query, setQuery] = useState('')
@@ -178,7 +180,7 @@ export function SalesHistoryPage({
                 setActionToast({ kind: 'ok', message: t('admin.sales.exportSuccess') })
               } catch (e: unknown) {
                 const code = (e as Error & { code?: string }).code
-                const message = t(`err.${code || 'EXPORT_SALES_FAILED'}`, { defaultValue: t('err.API_ERROR') })
+                const message = t(`err.${code || 'EXPORT_SALES_FAILED'}`)
                 setActionToast({ kind: 'err', message })
               } finally {
                 setExportBusy(false)
@@ -223,7 +225,7 @@ export function SalesHistoryPage({
               <tr key={s.id} className="border-t border-slate-800">
                 <td className="p-2">{s.public_sale_no || s.id.slice(0, 8)}</td>
                 <td className="p-2">{s.cashier_username}</td>
-                <td className="p-2 whitespace-nowrap">{new Date(s.completed_at).toLocaleString(dateLocale)}</td>
+                <td className="p-2 whitespace-nowrap">{new Date(s.completed_at).toLocaleString(dateLocaleStr)}</td>
                 <td className="p-2">
                   <StatusBadges s={s} t={t} />
                   {toIntAmount(s.refund_total) > 0 && (
@@ -271,7 +273,7 @@ export function SalesHistoryPage({
                 >
                   <div>{s.public_sale_no || s.id.slice(0, 8)}</div>
                   <div>{s.cashier_username}</div>
-                  <div className="text-xs">{new Date(s.completed_at).toLocaleString(dateLocale)}</div>
+                  <div className="text-xs">{new Date(s.completed_at).toLocaleString(dateLocaleStr)}</div>
                   <div>
                     <StatusBadges s={s} t={t} />
                   </div>

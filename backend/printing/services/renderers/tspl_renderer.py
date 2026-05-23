@@ -149,24 +149,47 @@ class TsplRenderer:
         return ("\n".join(lines) + "\n").encode("utf-8", errors="ignore")
 
     def render_label(self, *, label_payload: dict[str, Any], settings) -> bytes:
+        from printing.receipt import (
+            _label_custom_name,
+            _label_sell_price,
+            label_currency_suffix,
+            resolve_label_show_price,
+            resolve_receipt_store_lang,
+            transliterate_uz,
+        )
+
         variant = label_payload["variant"]
         size_key = (label_payload.get("size") or "40x30").strip()
         copies = max(1, min(200, int(label_payload.get("copies") or 1)))
-        show_price = label_payload.get("show_price", settings.show_price_on_labels_default if hasattr(settings, 'show_price_on_labels_default') else True)
+        print_price = resolve_label_show_price(
+            variant, settings, label_payload.get("show_price")
+        )
 
         barcode = (variant.barcode or "").strip() or "0"
-        # Handle null list_price - use purchase_price as fallback or "N/A"
-        price_value = variant.list_price or variant.purchase_price or 0
-        price = _tspl_literal(f"{self._money(price_value)} СОМ", max_len=22) if show_price else ""
+        store_lang = resolve_receipt_store_lang(settings, None)
+        raw_custom = _label_custom_name(variant.product, store_lang)
+        if store_lang != "ru" and getattr(settings, "transliterate_uz", True):
+            raw_custom = transliterate_uz(raw_custom)
+        custom = _tspl_literal(raw_custom, max_len=28)
+        sell = _label_sell_price(variant)
+        price = ""
+        if print_price and sell is not None:
+            suffix = label_currency_suffix(store_lang, ascii_only=True)
+            price = _tspl_literal(f"{self._money(sell)}{suffix}", max_len=24)
 
         w_mm, h_mm = _tspl_dimensions_mm(size_key)
         lay = _tspl_layout_centered(w_mm=w_mm, h_mm=h_mm, barcode=barcode)
         w_dots = lay["w_dots"]
 
+        x_custom = (
+            max(8, (w_dots - _text_width_dots(custom, char_dots=lay["sc_char"])) // 2)
+            if custom and custom != "-"
+            else 0
+        )
         x_price = max(
             8,
             (w_dots - _text_width_dots(price, char_dots=lay["price_char"])) // 2,
-        ) if show_price else 0
+        ) if print_price and price else 0
 
         header = [
             f"SIZE {w_mm} mm,{h_mm} mm",
@@ -175,13 +198,16 @@ class TsplRenderer:
         ]
         blocks: list[str] = []
         for _ in range(copies):
-            block = [
-                "CLS",
-                # Largest element: CODE128, human-readable under bars
-                f'BARCODE {lay["x_bc"]},{lay["y_bc"]},"128",{lay["bc_h"]},1,0,{lay["nar"]},{lay["wide"]},"{barcode}"',
-            ]
+            block = ["CLS"]
+            if custom and custom != "-":
+                block.append(
+                    f'TEXT {x_custom},{lay["y_sc"]},"{lay["sc_font"]}",0,{lay["sc_xmul"]},{lay["sc_ymul"]},"{custom}"'
+                )
+            block.append(
+                f'BARCODE {lay["x_bc"]},{lay["y_bc"]},"128",{lay["bc_h"]},1,0,{lay["nar"]},{lay["wide"]},"{barcode}"'
+            )
             # Price under barcode (centered) - only if show_price is True
-            if show_price and price:
+            if print_price and price:
                 block.append(f'TEXT {x_price},{lay["y_price"]},"{lay["price_font"]}",0,{lay["price_xmul"]},{lay["price_ymul"]},"{price}"')
             block.extend(["PRINT 1,1"])
             blocks.extend(block)

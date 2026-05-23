@@ -1,3 +1,4 @@
+import i18n from '../i18n'
 import { fetchReceiptEscpos, fetchReceiptPlain } from '../api'
 import { listInstalledPrinters, printRawBase64 } from './tauriPrint'
 
@@ -60,14 +61,13 @@ export async function dispatchPrint({ payloadBase64, kind, settings }: DispatchO
         await printRawBase64(payloadBase64, configured)
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err || '')
-        throw new Error(`Printer navbatiga yuborilmadi (${configured}): ${detail}`)
+        throw new Error(
+          i18n.t('err.PRINTER_QUEUE_FAILED', { printer: configured }) + (detail ? `: ${detail}` : ''),
+        )
       }
       return configured
     }
-    const what = kind === 'receipt' ? 'chek' : 'yorliq'
-    throw new Error(
-      `Printer ulanmagan: Windows ro'yxati bo'sh va dukon sozlamalarida ${what} printeri ko'rsatilmagan.`,
-    )
+    throw new Error(i18n.t('err.PRINTER_NOT_CONFIGURED_WINDOWS'))
   }
 
   let chosen: string | null = null
@@ -84,14 +84,16 @@ export async function dispatchPrint({ payloadBase64, kind, settings }: DispatchO
 
   if (!chosen) {
     const missing = configured || fallbackModel(kind)
-    throw new Error(`Printer ulanmagan: ${missing}`)
+    throw new Error(i18n.t('err.PRINTER_NOT_CONNECTED', { name: missing }))
   }
 
   try {
     await printRawBase64(payloadBase64, chosen)
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err || '')
-    throw new Error(`Printer navbatiga yuborilmadi (${chosen}): ${detail}`)
+    throw new Error(
+      i18n.t('err.PRINTER_QUEUE_FAILED', { printer: chosen }) + (detail ? `: ${detail}` : ''),
+    )
   }
   return chosen
 }
@@ -122,7 +124,5 @@ export async function printReceiptWithFallback(
     await invoke('print_plain', { text: plain })
     return { kind: 'plain' }
   }
-  throw new Error(
-    "Printer ulanmagan: chek ma'lumoti yuklanmadi (server ESC/POS yoki matn qaytarmadi).",
-  )
+  throw new Error(i18n.t('err.PRINTER_RECEIPT_PAYLOAD_EMPTY'))
 }

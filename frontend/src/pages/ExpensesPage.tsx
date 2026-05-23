@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ExpenseCategory, ShopExpenseRow } from '../api'
-import { createShopExpense, fetchShopExpenses } from '../api'
+import { createShopExpense, fetchShopExpenses, updateShopExpense } from '../api'
 import { formatMoney } from '../utils/money'
 import { ActionToast } from '../components/ActionToast'
 import { requestAdminDataRefresh } from '../utils/adminDataRefresh'
@@ -11,19 +11,33 @@ const CATEGORY_OPTIONS: ExpenseCategory[] = ['RENT', 'UTILITIES', 'SUPPLIES', 'S
 export function ExpensesPage() {
   const { t } = useTranslation()
   const [rows, setRows] = useState<ShopExpenseRow[]>([])
+  const [count, setCount] = useState(0)
+  const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [amount, setAmount] = useState('')
   const [category, setCategory] = useState<ExpenseCategory>('OTHER')
   const [note, setNote] = useState('')
+  const [editing, setEditing] = useState<ShopExpenseRow | null>(null)
+  const [editAmount, setEditAmount] = useState('')
+  const [editCategory, setEditCategory] = useState<ExpenseCategory>('OTHER')
+  const [editNote, setEditNote] = useState('')
   const [toast, setToast] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null)
+
+  const maxPage = Math.max(1, Math.ceil(count / 25))
 
   async function load() {
     setLoading(true)
     try {
-      const data = await fetchShopExpenses({ from: from || undefined, to: to || undefined })
-      setRows(data)
+      const data = await fetchShopExpenses({
+        from: from || undefined,
+        to: to || undefined,
+        page,
+        page_size: 25,
+      })
+      setRows(data.results)
+      setCount(data.count)
     } catch {
       setToast({ kind: 'err', msg: t('admin.expenses.loadFail') })
     } finally {
@@ -33,7 +47,14 @@ export function ExpensesPage() {
 
   useEffect(() => {
     void load()
-  }, [from, to])
+  }, [from, to, page])
+
+  function openEdit(row: ShopExpenseRow) {
+    setEditing(row)
+    setEditAmount(String(row.amount).replace(/\.00$/, ''))
+    setEditCategory(row.category)
+    setEditNote(row.note || '')
+  }
 
   return (
     <div className="p-4 space-y-6 max-w-4xl">
@@ -88,6 +109,7 @@ export function ExpensesPage() {
                 setAmount('')
                 setNote('')
                 setToast({ kind: 'ok', msg: t('admin.expenses.saved') })
+                setPage(1)
                 void load()
                 requestAdminDataRefresh('shop-expense')
               } catch {
@@ -100,8 +122,8 @@ export function ExpensesPage() {
         </div>
       </div>
       <div className="flex flex-wrap gap-2 items-center">
-        <input type="date" className="touch-btn min-h-12 px-3 rounded-xl bg-slate-900 border border-slate-700" value={from} onChange={(e) => setFrom(e.target.value)} />
-        <input type="date" className="touch-btn min-h-12 px-3 rounded-xl bg-slate-900 border border-slate-700" value={to} onChange={(e) => setTo(e.target.value)} />
+        <input type="date" className="touch-btn min-h-12 px-3 rounded-xl bg-slate-900 border border-slate-700" value={from} onChange={(e) => { setFrom(e.target.value); setPage(1) }} />
+        <input type="date" className="touch-btn min-h-12 px-3 rounded-xl bg-slate-900 border border-slate-700" value={to} onChange={(e) => { setTo(e.target.value); setPage(1) }} />
         <button type="button" className="touch-btn min-h-12 px-4 rounded-xl bg-slate-800 border border-slate-600" onClick={() => void load()}>
           {t('admin.expenses.reload')}
         </button>
@@ -111,29 +133,129 @@ export function ExpensesPage() {
       ) : rows.length === 0 ? (
         <p className="text-slate-500">{t('admin.expenses.empty')}</p>
       ) : (
-        <div className="rounded-xl border border-slate-800 overflow-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-900 text-slate-400">
-              <tr>
-                <th className="text-left p-2">{t('admin.expenses.when')}</th>
-                <th className="text-left p-2">{t('admin.expenses.amount')}</th>
-                <th className="text-left p-2">{t('admin.expenses.category')}</th>
-                <th className="text-left p-2">{t('admin.expenses.note')}</th>
-                <th className="text-left p-2">{t('admin.expenses.cashier')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id} className="border-t border-slate-800">
-                  <td className="p-2 whitespace-nowrap">{new Date(r.recorded_at).toLocaleString()}</td>
-                  <td className="p-2 text-right tabular-nums">{formatMoney(r.amount)}</td>
-                  <td className="p-2">{t(`admin.expenses.cat.${r.category}`)}</td>
-                  <td className="p-2 max-w-[12rem] truncate">{r.note || '—'}</td>
-                  <td className="p-2 text-slate-400">{r.cashier_username ?? '—'}</td>
+        <>
+          <div className="rounded-xl border border-slate-800 overflow-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-900 text-slate-400">
+                <tr>
+                  <th className="text-left p-2">{t('admin.expenses.when')}</th>
+                  <th className="text-left p-2">{t('admin.expenses.amount')}</th>
+                  <th className="text-left p-2">{t('admin.expenses.category')}</th>
+                  <th className="text-left p-2">{t('admin.expenses.note')}</th>
+                  <th className="text-left p-2">{t('admin.expenses.cashier')}</th>
+                  <th className="text-right p-2">{t('admin.common.edit')}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.id} className="border-t border-slate-800">
+                    <td className="p-2 whitespace-nowrap">{new Date(r.recorded_at).toLocaleString()}</td>
+                    <td className="p-2 text-right tabular-nums">{formatMoney(r.amount)}</td>
+                    <td className="p-2">{t(`admin.expenses.cat.${r.category}`)}</td>
+                    <td className="p-2 max-w-[12rem] truncate">{r.note || ''}</td>
+                    <td className="p-2 text-slate-400">{r.cashier_username ?? ''}</td>
+                    <td className="p-2 text-right">
+                      <button
+                        type="button"
+                        className="touch-btn min-h-10 px-3 rounded-lg bg-slate-800 border border-slate-600 text-xs"
+                        onClick={() => openEdit(r)}
+                      >
+                        {t('admin.common.edit')}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <button
+              type="button"
+              disabled={page <= 1}
+              className="touch-btn min-h-10 px-3 rounded-lg bg-slate-800 border border-slate-600 disabled:opacity-40"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              {t('admin.common.prev')}
+            </button>
+            <span className="text-slate-400">{t('admin.common.pageOf', { page, maxPage })}</span>
+            <button
+              type="button"
+              disabled={page >= maxPage}
+              className="touch-btn min-h-10 px-3 rounded-lg bg-slate-800 border border-slate-600 disabled:opacity-40"
+              onClick={() => setPage((p) => Math.min(maxPage, p + 1))}
+            >
+              {t('admin.common.next')}
+            </button>
+          </div>
+        </>
+      )}
+
+      {editing && (
+        <div className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4" onClick={() => setEditing(null)}>
+          <div
+            className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 p-4 space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold">{t('admin.expenses.editTitle')}</h3>
+            <label className="block text-xs text-slate-400">
+              {t('admin.expenses.amount')}
+              <input
+                type="number"
+                min={1}
+                className="touch-btn mt-1 w-full min-h-12 px-3 rounded-xl bg-slate-950 border border-slate-700"
+                value={editAmount}
+                onChange={(e) => setEditAmount(e.target.value)}
+              />
+            </label>
+            <label className="block text-xs text-slate-400">
+              {t('admin.expenses.category')}
+              <select
+                className="touch-btn mt-1 w-full min-h-12 px-3 rounded-xl bg-slate-950 border border-slate-700"
+                value={editCategory}
+                onChange={(e) => setEditCategory(e.target.value as ExpenseCategory)}
+              >
+                {CATEGORY_OPTIONS.map((c) => (
+                  <option key={c} value={c}>
+                    {t(`admin.expenses.cat.${c}`)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-xs text-slate-400">
+              {t('admin.expenses.note')}
+              <input
+                className="touch-btn mt-1 w-full min-h-12 px-3 rounded-xl bg-slate-950 border border-slate-700"
+                value={editNote}
+                onChange={(e) => setEditNote(e.target.value)}
+              />
+            </label>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="touch-btn min-h-12 px-4 rounded-xl bg-slate-800 border border-slate-600" onClick={() => setEditing(null)}>
+                {t('admin.common.cancel')}
+              </button>
+              <button
+                type="button"
+                className="touch-btn min-h-12 px-4 rounded-xl bg-emerald-700 border border-emerald-500"
+                onClick={async () => {
+                  try {
+                    await updateShopExpense(editing.id, {
+                      amount: Number(editAmount).toFixed(0),
+                      category: editCategory,
+                      note: editNote.trim(),
+                    })
+                    setEditing(null)
+                    setToast({ kind: 'ok', msg: t('admin.expenses.updated') })
+                    void load()
+                    requestAdminDataRefresh('shop-expense')
+                  } catch {
+                    setToast({ kind: 'err', msg: t('admin.expenses.updateFail') })
+                  }
+                }}
+              >
+                {t('admin.common.save')}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -66,6 +66,7 @@ import { PosPage } from './pages/PosPage'
 import { dispatchLabel, printReceiptWithFallback } from './utils/printingHub'
 import {
   GEEKS_REFRESH_ADMIN_EVENT,
+  GEEKS_STORE_SETTINGS_EVENT,
   requestAdminDataRefresh,
   type AdminRefreshDetail,
 } from './utils/adminDataRefresh'
@@ -345,6 +346,15 @@ export default function App() {
     return () => window.removeEventListener(GEEKS_REFRESH_ADMIN_EVENT, handler)
   }, [authed])
 
+  useEffect(() => {
+    if (!authed) return
+    const handler = () => {
+      void fetchStoreSettings().then(setSettings).catch(() => {})
+    }
+    window.addEventListener(GEEKS_STORE_SETTINGS_EVENT, handler)
+    return () => window.removeEventListener(GEEKS_STORE_SETTINGS_EVENT, handler)
+  }, [authed])
+
   /** Boshqa tab/terminalda moliya o‘zgarsa ham dashboard taxminan yangilanadi */
   useEffect(() => {
     if (!authed || !isManager) return
@@ -554,11 +564,20 @@ export default function App() {
                   await refreshAdminData()
                 }}
                 onPrintSticker={async (variantId, copies, size) => {
-                  const { raw_base64, escpos_base64 } = await fetchLabelEscpos(variantId, size, copies, settings?.show_price_on_labels_default)
+                  const { raw_base64, escpos_base64 } = await fetchLabelEscpos(
+                    variantId,
+                    size,
+                    copies,
+                    settings?.show_price_on_labels_default !== false,
+                  )
                   await dispatchLabel(raw_base64 || escpos_base64, settings)
                 }}
                 onPrintStickerQueue={async (items, size) => {
-                  const out = await fetchLabelQueueEscpos(items, size, settings?.show_price_on_labels_default)
+                  const out = await fetchLabelQueueEscpos(
+                    items,
+                    size,
+                    settings?.show_price_on_labels_default !== false,
+                  )
                   for (const row of out.items) {
                     await dispatchLabel(row.raw_base64 || row.escpos_base64, settings)
                   }
@@ -709,13 +728,18 @@ function AdminPanel(props: {
   onCreateVariantBulk: (payload: { product_id: string; matrix: BulkGridCell[] }) => Promise<Variant[]>
   onCreateCategory: (payload: { name_uz: string; name_ru: string }) => Promise<void>
   onCreateProduct: (payload: { category: string; name_uz: string; name_ru: string }) => Promise<void>
-  onUpdateProduct: (productId: string, payload: { custom_name_uz?: string; custom_name_ru?: string; custom_name_uz_cyrillic?: string }) => Promise<void>
+  onUpdateProduct: (productId: string, payload: { custom_name_uz?: string; custom_name_ru?: string; custom_name_uz_cyrillic?: string; color?: string }) => Promise<void>
   onDeleteCategory: (categoryId: string) => Promise<void>
   onDeleteProduct: (productId: string) => Promise<void>
   onToggleVariant: (v: Variant) => Promise<void>
   onUpdateVariant: (
     v: Variant,
-    patch: { purchase_price: string; list_price: string },
+    patch: {
+      purchase_price: string
+      list_price: string
+      hide_selling_price?: boolean
+      show_price_on_label?: boolean
+    },
   ) => Promise<void>
   onDeleteVariant: (variantId: string) => Promise<void>
   onRepay: (customerId: string, amount: string) => Promise<void>
