@@ -6,7 +6,7 @@ import { formatMoney } from '../utils/money'
 import { NumericNumpadField } from '../components/NumericNumpadField'
 import { TouchNumpad } from '../components/TouchNumpad'
 import { ActionToast } from '../components/ActionToast'
-import { Pencil, Printer, Power, Trash2, PackagePlus, ScanBarcode } from 'lucide-react'
+import { Pencil, Printer, Power, Trash2, PackagePlus, ScanBarcode, MoreVertical } from 'lucide-react'
 
 const LABEL_SIZE_STORAGE_KEY = 'geeks_pos_catalog_label_size'
 const DEFAULT_LABEL_SIZE: LabelStickerSize = '40x30'
@@ -142,6 +142,7 @@ export function CatalogPage({
   const [numpadOpen, setNumpadOpen] = useState<null | { field: 'purchase' | 'list' | 'qty'; cellId: string }>(null)
   const [lowStockModalOpen, setLowStockModalOpen] = useState(false)
   const [lowStockFilterBrand, setLowStockFilterBrand] = useState('')
+  const [actionMenu, setActionMenu] = useState<{ x: number; y: number; variant: Variant } | null>(null)
 
   const productStockTotals = useMemo(() => {
     const totals: Record<string, number> = {}
@@ -830,17 +831,16 @@ export function CatalogPage({
         )}
       </div>
 
-      <div className="rounded border border-slate-700 overflow-x-auto kiosk-scrollbar">
-        <div className="min-w-[80rem]">
-          <div className="grid grid-cols-[200px_180px_140px_120px_140px_140px_1fr] bg-slate-900 text-slate-400 text-sm border-b border-slate-800">
-            <div className="text-left p-2">{t('admin.catalog.product')}</div>
-            <div className="text-left p-2">{t('admin.catalog.customName')}</div>
-            <div className="text-left p-2">{t('admin.catalog.barcode')}</div>
-            <div className="text-right p-2">{t('admin.catalog.stock')}</div>
-            <div className="text-right p-2">{t('admin.catalog.purchase')}</div>
-            <div className="text-right p-2">{t('admin.catalog.price')}</div>
-            <div className="text-left p-2">{t('admin.catalog.action')}</div>
-          </div>
+      <div className="rounded border border-slate-700 overflow-hidden">
+        <div className="grid grid-cols-[minmax(200px,1.5fr)_minmax(150px,1fr)_minmax(120px,1fr)_120px_130px_130px_60px] bg-slate-900 text-slate-400 text-sm border-b border-slate-800">
+          <div className="text-left p-3">{t('admin.catalog.product')}</div>
+          <div className="text-left p-3">{t('admin.catalog.customName')}</div>
+          <div className="text-left p-3">{t('admin.catalog.barcode')}</div>
+          <div className="text-right p-3">{t('admin.catalog.stock')}</div>
+          <div className="text-right p-3">{t('admin.catalog.purchase')}</div>
+          <div className="text-right p-3">{t('admin.catalog.price')}</div>
+          <div className="text-center p-3">{t('admin.catalog.action')}</div>
+        </div>
         {!useVirtualRows && (
           <div>
             {variants.map((v) => {
@@ -857,8 +857,8 @@ export function CatalogPage({
                 : v.product_custom_name_uz
               const colorLabel = v.color ? t(`admin.catalog.colors.${v.color}`) : ''
               return (
-              <div key={v.id} className={`grid grid-cols-[200px_180px_140px_120px_140px_140px_1fr] border-t border-slate-800 text-sm ${catalogVariantRowClass(v)}`}>
-                <div className="p-2">
+              <div key={v.id} className={`grid grid-cols-[minmax(200px,1.5fr)_minmax(150px,1fr)_minmax(120px,1fr)_120px_130px_130px_60px] border-t border-slate-800 text-sm ${catalogVariantRowClass(v)}`}>
+                <div className="p-3">
                   <div>{categoryName}</div>
                   {(modelName || colorLabel) && (
                     <div className="text-xs text-slate-400">
@@ -868,9 +868,9 @@ export function CatalogPage({
                     </div>
                   )}
                 </div>
-                <div className="p-2 text-slate-300">{customName || '-'}</div>
-                <div className="p-2 font-mono text-xs">{v.barcode}</div>
-                <div className="p-2 text-right">
+                <div className="p-3 text-slate-300 truncate">{customName || '-'}</div>
+                <div className="p-3 font-mono text-xs">{v.barcode}</div>
+                <div className="p-3 text-right">
                   <button
                     type="button"
                     className="touch-btn min-h-10 px-3 rounded bg-slate-800 border border-slate-600"
@@ -892,73 +892,19 @@ export function CatalogPage({
                     })}
                   </div>
                 </div>
-                <div className="p-2 text-right tabular-nums">{formatMoney(v.purchase_price)}</div>
-                <div className="p-2 text-right tabular-nums">{formatMoney(v.list_price)}</div>
-                <div className="p-2">
-                  <div className="flex gap-1 flex-nowrap overflow-x-auto">
-                    <button
-                      type="button"
-                      className="touch-btn min-h-10 px-2 py-1 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1 text-xs whitespace-nowrap shrink-0"
-                      onClick={() => {
-                        setEditing(v)
-                        setEditPrice(v.list_price ?? '')
-                        setEditPurchase(v.purchase_price)
-                      }}
-                    >
-                      <Pencil className="h-3 w-3" /> {t('admin.catalog.edit')}
-                    </button>
-                    <button
-                      type="button"
-                      className="touch-btn min-h-10 px-2 py-1 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1 text-xs whitespace-nowrap shrink-0"
-                      onClick={() => void addToQueue(v.id)}
-                    >
-                      <PackagePlus className="h-3 w-3" /> {t('admin.catalog.queueAdd')}
-                    </button>
-                    <button
-                      type="button"
-                      className="touch-btn min-h-10 px-2 py-1 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1 text-xs whitespace-nowrap shrink-0"
-                      onClick={async () => {
-                        try {
-                          await onPrintSticker(v.id, 1, queueSize)
-                          setToast(t('admin.catalog.stickerPrinted'))
-                        } catch (e: unknown) {
-                          const rawMessage = e instanceof Error ? e.message : String(e || '')
-                          if (rawMessage.startsWith('Printer ulanmagan:')) {
-                            setToast(rawMessage)
-                          } else {
-                            setToast(t('err.LABEL_PRINT_FAILED'))
-                          }
-                        }
-                      }}
-                    >
-                      <Printer className="h-3 w-3" /> {t('admin.catalog.printSticker')}
-                    </button>
-                    <button
-                      type="button"
-                      className="touch-btn min-h-10 px-2 py-1 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1 text-xs whitespace-nowrap shrink-0"
-                      onClick={async () => {
-                        try {
-                          await onToggleVariant(v)
-                          setToast(t('admin.catalog.toggleSuccess'))
-                        } catch (e: unknown) {
-                          const code = (e as Error & { code?: string }).code
-                          setToast(t(`err.${code || 'API_ERROR'}`))
-                        }
-                      }}
-                    >
-                      <Power className="h-3 w-3" />
-                      {v.is_active ? t('admin.catalog.deactivate') : t('admin.catalog.activate')}
-                    </button>
-                    <button
-                      type="button"
-                      className="touch-btn min-h-10 px-2 py-1 rounded bg-red-900 border border-red-700 inline-flex items-center gap-1 text-xs whitespace-nowrap shrink-0"
-                      onClick={async () => {
-                        setConfirmDeleteId(v.id)
-                      }}
-                    >
-                      <Trash2 className="h-3 w-3" /> {t('admin.catalog.delete')}
-                    </button>
-                  </div>
+                <div className="p-3 text-right tabular-nums">{formatMoney(v.purchase_price)}</div>
+                <div className="p-3 text-right tabular-nums">{v.list_price ? formatMoney(v.list_price) : formatMoney(0)}</div>
+                <div className="p-3 flex items-start justify-center">
+                  <button
+                    type="button"
+                    className="touch-btn min-h-12 w-12 rounded-xl bg-slate-800 border border-slate-600 inline-flex items-center justify-center"
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect()
+                      setActionMenu({ x: rect.right, y: rect.bottom, variant: v })
+                    }}
+                  >
+                    <MoreVertical className="h-5 w-5 text-slate-300" />
+                  </button>
                 </div>
               </div>
               )
@@ -970,7 +916,6 @@ export function CatalogPage({
             )}
           </div>
           )}
-        </div>
         {useVirtualRows && (
           <List
             defaultHeight={Math.min(620, Math.max(260, variants.length * 74))}
@@ -994,24 +939,33 @@ export function CatalogPage({
               return (
                 <div
                   style={style}
-                  className={`grid grid-cols-[200px_180px_140px_120px_140px_140px_1fr] items-start border-b border-slate-800 text-sm ${catalogVariantRowClass(v)}`}
+                  className={`grid grid-cols-[minmax(200px,1.5fr)_minmax(150px,1fr)_minmax(120px,1fr)_120px_130px_130px_60px] border-b border-slate-800 text-sm ${catalogVariantRowClass(v)}`}
                 >
-                  <div className="p-2">
+                  <div className="p-3">
                     <div>{categoryName}</div>
                     {(modelName || colorLabel) && (
-                      <div className="text-[11px] text-slate-400">
+                      <div className="text-xs text-slate-400">
                         {modelName}
                         {modelName && colorLabel && ' • '}
                         {colorLabel}
                       </div>
                     )}
                   </div>
-                  <div className="p-2 text-slate-300">{customName || '-'}</div>
-                  <div className="p-2 font-mono text-xs">{v.barcode}</div>
-                  <div className="p-2 text-right">
-                    <div>{v.stock_qty}</div>
+                  <div className="p-3 text-slate-300 truncate">{customName || '-'}</div>
+                  <div className="p-3 font-mono text-xs">{v.barcode}</div>
+                  <div className="p-3 text-right">
+                    <button
+                      type="button"
+                      className="touch-btn min-h-10 px-3 rounded bg-slate-800 border border-slate-600"
+                      onClick={() => {
+                        setQuickAdjust(v)
+                        setQuickDelta(0)
+                      }}
+                    >
+                      {v.stock_qty} {t('admin.catalog.stockUnit')}
+                    </button>
                     <div
-                      className={`text-[11px] ${
+                      className={`text-xs mt-1 ${
                         !v.is_active ? 'text-slate-500' : isModelLow ? 'text-amber-300' : 'text-slate-500'
                       }`}
                     >
@@ -1021,73 +975,26 @@ export function CatalogPage({
                       })}
                     </div>
                   </div>
-                  <div className="p-2 text-right tabular-nums">{formatMoney(v.purchase_price)}</div>
-                  <div className="p-2 text-right tabular-nums">{formatMoney(v.list_price)}</div>
-                  <div className="p-2">
-                    <div className="flex gap-1 flex-nowrap overflow-x-auto">
-                      <button
-                        type="button"
-                        className="touch-btn min-h-10 px-2 py-1 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1 text-xs whitespace-nowrap shrink-0"
-                        onClick={() => {
-                          setEditing(v)
-                          setEditPrice(v.list_price ?? '')
-                          setEditPurchase(v.purchase_price)
-                        }}
-                      >
-                        <Pencil className="h-3 w-3" /> {t('admin.catalog.edit')}
-                      </button>
-                      <button
-                        type="button"
-                        className="touch-btn min-h-10 px-2 py-1 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1 text-xs whitespace-nowrap shrink-0"
-                        onClick={() => void addToQueue(v.id)}
-                      >
-                        <PackagePlus className="h-3 w-3" /> {t('admin.catalog.queueAdd')}
-                      </button>
-                      <button
-                        type="button"
-                        className="touch-btn min-h-10 px-2 py-1 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1 text-xs whitespace-nowrap shrink-0"
-                        onClick={async () => {
-                          try {
-                            await onPrintSticker(v.id, 1, queueSize)
-                            setToast(t('admin.catalog.stickerPrinted'))
-                          } catch (e: unknown) {
-                            const rawMessage = e instanceof Error ? e.message : String(e || '')
-                            setToast(rawMessage.startsWith('Printer ulanmagan:') ? rawMessage : t('err.LABEL_PRINT_FAILED'))
-                          }
-                        }}
-                      >
-                        <Printer className="h-3 w-3" /> {t('admin.catalog.printSticker')}
-                      </button>
-                      <button
-                        type="button"
-                        className="touch-btn min-h-10 px-2 py-1 rounded bg-slate-800 border border-slate-600 inline-flex items-center gap-1 text-xs whitespace-nowrap shrink-0"
-                        onClick={async () => {
-                          try {
-                            await onToggleVariant(v)
-                            setToast(t('admin.catalog.toggleSuccess'))
-                          } catch (e: unknown) {
-                            const code = (e as Error & { code?: string }).code
-                            setToast(t(`err.${code || 'API_ERROR'}`))
-                          }
-                        }}
-                      >
-                        <Power className="h-3 w-3" />
-                        {v.is_active ? t('admin.catalog.deactivate') : t('admin.catalog.activate')}
-                      </button>
-                      <button
-                        type="button"
-                        className="touch-btn min-h-10 px-2 py-1 rounded bg-red-900 border border-red-700 inline-flex items-center gap-1 text-xs whitespace-nowrap shrink-0"
-                        onClick={() => setConfirmDeleteId(v.id)}
-                      >
-                        <Trash2 className="h-3 w-3" /> {t('admin.catalog.delete')}
-                      </button>
-                    </div>
+                  <div className="p-3 text-right tabular-nums">{formatMoney(v.purchase_price)}</div>
+                  <div className="p-3 text-right tabular-nums">{v.list_price ? formatMoney(v.list_price) : formatMoney(0)}</div>
+                  <div className="p-3 flex items-start justify-center">
+                    <button
+                      type="button"
+                      className="touch-btn min-h-12 w-12 rounded-xl bg-slate-800 border border-slate-600 inline-flex items-center justify-center"
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        setActionMenu({ x: rect.right, y: rect.bottom, variant: v })
+                      }}
+                    >
+                      <MoreVertical className="h-5 w-5 text-slate-300" />
+                    </button>
                   </div>
                 </div>
               )
             }}
             rowProps={{ rows: variants }}
             className="border-t border-slate-800"
+            onScroll={() => setActionMenu(null)}
           />
         )}
       </div>
@@ -1622,6 +1529,94 @@ export function CatalogPage({
             </div>
           </div>
         </div>
+      )}
+      {actionMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-[100]"
+            onClick={() => setActionMenu(null)}
+          />
+          <div
+            className="fixed z-[101] bg-slate-950 border-2 border-slate-600 rounded-lg shadow-2xl min-w-[240px] py-2"
+            style={{
+              top: Math.min(actionMenu.y + 4, window.innerHeight - 300),
+              left: Math.min(actionMenu.x - 220, window.innerWidth - 260),
+            }}
+          >
+            <button
+              type="button"
+              className="w-full min-h-14 px-5 py-3 text-left hover:bg-slate-800 flex items-center gap-3 text-base text-slate-100 font-medium"
+              onClick={() => {
+                setEditing(actionMenu.variant)
+                setEditPrice(actionMenu.variant.list_price ?? '')
+                setEditPurchase(actionMenu.variant.purchase_price)
+                setActionMenu(null)
+              }}
+            >
+              <Pencil className="h-5 w-5" /> {t('admin.catalog.edit')}
+            </button>
+            <button
+              type="button"
+              className="w-full min-h-14 px-5 py-3 text-left hover:bg-slate-800 flex items-center gap-3 text-base text-slate-100 font-medium"
+              onClick={() => {
+                addToQueue(actionMenu.variant.id)
+                setActionMenu(null)
+              }}
+            >
+              <PackagePlus className="h-5 w-5" /> {t('admin.catalog.queueAdd')}
+            </button>
+            <button
+              type="button"
+              className="w-full min-h-14 px-5 py-3 text-left hover:bg-slate-800 flex items-center gap-3 text-base text-slate-100 font-medium"
+              onClick={async () => {
+                const variant = actionMenu.variant;
+                setActionMenu(null)
+                try {
+                  await onPrintSticker(variant.id, 1, queueSize)
+                  setToast(t('admin.catalog.stickerPrinted'))
+                } catch (e: unknown) {
+                  const rawMessage = e instanceof Error ? e.message : String(e || '')
+                  if (rawMessage.startsWith('Printer ulanmagan:')) {
+                    setToast(rawMessage)
+                  } else {
+                    setToast(t('err.LABEL_PRINT_FAILED'))
+                  }
+                }
+              }}
+            >
+              <Printer className="h-5 w-5" /> {t('admin.catalog.printSticker')}
+            </button>
+            <button
+              type="button"
+              className="w-full min-h-14 px-5 py-3 text-left hover:bg-slate-800 flex items-center gap-3 text-base text-slate-100 font-medium"
+              onClick={async () => {
+                const variant = actionMenu.variant;
+                setActionMenu(null)
+                try {
+                  await onToggleVariant(variant)
+                  setToast(t('admin.catalog.toggleSuccess'))
+                } catch (e: unknown) {
+                  const code = (e as Error & { code?: string }).code
+                  setToast(t(`err.${code || 'API_ERROR'}`))
+                }
+              }}
+            >
+              <Power className="h-5 w-5" />
+              {actionMenu.variant.is_active ? t('admin.catalog.deactivate') : t('admin.catalog.activate')}
+            </button>
+            <div className="border-t border-slate-700 my-2" />
+            <button
+              type="button"
+              className="w-full min-h-14 px-5 py-3 text-left hover:bg-red-900/70 flex items-center gap-3 text-base text-red-400 font-medium"
+              onClick={() => {
+                setConfirmDeleteId(actionMenu.variant.id)
+                setActionMenu(null)
+              }}
+            >
+              <Trash2 className="h-5 w-5" /> {t('admin.catalog.delete')}
+            </button>
+          </div>
+        </>
       )}
     </div>
   )

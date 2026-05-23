@@ -55,24 +55,25 @@ def _tspl_layout_centered(
     """
     w_dots = w_mm * 8
     h_dots = h_mm * 8
-    margin = 6
-    gap_small = 4
+    margin = 8
+    gap_small = 16
     # Space under bars for CODE128 human-readable digits (printer-dependent).
-    gap_after_bc = 28
+    gap_after_bc = 36
 
     compact = w_mm <= 40 and h_mm <= 30
     if compact:
         margin = 4
-        gap_small = 2
-        gap_after_bc = 18
+        gap_small = 8
+        gap_after_bc = 24
 
     # Price under barcode — readable but smaller than barcode height
-    price_font = "2"
-    price_char = 10
-    price_line_h = 22
+    price_font = "3"
+    price_char = 16
+    price_line_h = 26
     if compact:
-        price_line_h = 18
-        price_char = 9
+        price_font = "2"
+        price_line_h = 22
+        price_char = 12
 
     inner_w = max(16, w_dots - 2 * margin)
     inner_h = max(32, h_dots - 2 * margin)
@@ -100,10 +101,14 @@ def _tspl_layout_centered(
     x_bc = margin + max(0, (inner_w - bc_w_est) // 2)
 
     # Vertical block: center the whole stack in label coordinates (margin box)
-    # Note: sc_line_h is not used in simplified layout (no size/color), set to 0
-    sc_line_h = 0
-    sc_font = "1"
-    sc_char = 8
+    sc_font = "2"
+    sc_char = 12
+    sc_line_h = 24
+    if compact:
+        sc_font = "1"
+        sc_char = 8
+        sc_line_h = 16
+
     stack_h = sc_line_h + gap_small + bc_h + gap_after_bc + price_line_h
     y0 = margin + max(0, (inner_h - stack_h) // 2)
 

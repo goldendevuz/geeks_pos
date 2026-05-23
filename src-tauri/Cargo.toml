@@ -1,13 +1,16 @@
 [package]
-name = "app"
+name = "geeks-pos"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "GEEKS POS - Point of Sale System"
+authors = ["GEEKS"]
 license = ""
 repository = ""
-default-run = "app"
 edition = "2021"
 rust-version = "1.60"
+
+[[bin]]
+name = "geeks-pos"
+path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "1.5.2", features = [] }

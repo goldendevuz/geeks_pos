@@ -36,8 +36,8 @@
         "icons/resized-logo (1).png",
         "icons/resized-logo (2).png"
       ],
-      "longDescription": "",
-      "shortDescription": "",
+      "longDescription": "GEEKS POS - Professional Point of Sale System",
+      "shortDescription": "Point of Sale System",
       "targets": "all",
       "windows": {
         "certificateThumbprint": null,

@@ -618,7 +618,7 @@ def label_escpos_bytes(*, variant, size: str = "40x30", copies: int = 1, show_pr
                     p.set(align="center", width=1, height=1)
                 else:
                     p.set(align="center", width=2, height=2)
-                p.text(f"{custom}\n")
+                p.text(f"{custom}\n\n")
             p.set(align="center")
             # Avoid python-escpos profile warning on Dummy() printers where media.width.pixel is unset.
             try:
@@ -641,7 +641,7 @@ def label_escpos_bytes(*, variant, size: str = "40x30", copies: int = 1, show_pr
                     check=False,
                     align_ct=False,
                 )
-            p.text("\n")
+            p.text("\n\n")
             if print_price and price:
                 if skey == "40x30":
                     p.set(align="center", width=1, height=2)

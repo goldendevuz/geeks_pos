@@ -48,19 +48,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
-name = "app"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "uuid",
- "windows-sys 0.59.0",
-]
-
-[[package]]
 name = "atk"
 version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -940,6 +927,19 @@ dependencies = [
  "libc",
  "system-deps 6.2.2",
  "x11",
+]
+
+[[package]]
+name = "geeks-pos"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "uuid",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

@@ -120,6 +120,8 @@ export function PosPage({
   const pendingQtyFocus = useRef(false)
   /** Synchronous guard: React `completing` state can lag one frame behind rapid double-submit. */
   const completeInFlightRef = useRef(false)
+  /** Guard to prevent auto-complete immediately after a scan (debounce). */
+  const lastScanTimeRef = useRef(0)
   /** Bumps after each successful sale so identical cart contents still get a new idempotency key. */
   const idempotencyGenRef = useRef(0)
   const lastScanRef = useRef<{ code: string; at: number } | null>(null)
@@ -598,6 +600,7 @@ export function PosPage({
       return
     }
     lastScanRef.current = { code: c, at: now }
+    lastScanTimeRef.current = now
     try {
       const v = await fetchVariantByBarcode(c)
       setBuffer('')
@@ -731,7 +734,8 @@ export function PosPage({
         cart.length > 0 &&
         !completing &&
         !completeInFlightRef.current &&
-        !scanFieldPending()
+        !scanFieldPending() &&
+        Date.now() - lastScanTimeRef.current > 500
       ) {
         void doComplete()
       }
@@ -795,7 +799,8 @@ export function PosPage({
             cart.length > 0 &&
             !completing &&
             !completeInFlightRef.current &&
-            !scanFieldPending()
+            !scanFieldPending() &&
+            Date.now() - lastScanTimeRef.current > 500
           ) {
             void doComplete()
           }
