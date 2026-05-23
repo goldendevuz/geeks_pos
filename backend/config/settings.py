@@ -78,15 +78,21 @@ if not DEBUG and (
 ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
 
 INSTALLED_APPS = [
-    "django.contrib.admin",
+    'jazzmin',
+    'django_daisy',
+    'django.contrib.admin',
+    'django.contrib.humanize',  # Required for django-daisy
+    # default apps
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    'drf_material',
     "rest_framework",
     "rest_framework.authtoken",
     "corsheaders",
+    'import_export',
     "core.apps.CoreConfig",
     "accounts.apps.AccountsConfig",
     "catalog",
@@ -103,6 +109,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -174,9 +181,14 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+
+# Collect static files here
+STATIC_ROOT = APP_HOME_DIR / 'staticfiles'
+
 MEDIA_URL = "/media/"
 MEDIA_ROOT = APP_HOME_DIR / "media"
 MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
@@ -298,3 +310,15 @@ LOGGING = {
         "django.db.backends": {"handlers": ["file"], "level": "WARNING", "propagate": False},
     },
 }
+
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+    },
+}
+
+WHITENOISE_MANIFEST_STRICT = False
+WHITENOISE_ADD_HEADERS_FUNCTION = None

@@ -9,3 +9,8 @@ pytest-django>=4.8,<5
 openpyxl>=3.1,<4
 cryptography>=45.0.7,<47
 python-dotenv>=1.0,<2
+whitenoise==6.12.0
+django-daisy==2.0.8
+drf-material==0.3.4
+django-jazzmin==3.0.3
+django-import-export[all]==4.4.0
